@@ -177,7 +177,7 @@
     <script>
         // Configuration
         const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
-        const TOTAL_FILES = 123; // Total number of split files
+        const TOTAL_FILES = 123;
         
         // DOM Elements
         const npiInput = document.getElementById('npiInput');
@@ -204,36 +204,31 @@
             try {
                 progressText.textContent = 'Searching through files...';
                 
-                // Search through all files in batches
-                const batchSize = 5; // Number of concurrent requests
+                const batchSize = 5;
                 const matchingRows = [];
                 
                 for (let startIdx = 0; startIdx < TOTAL_FILES; startIdx += batchSize) {
                     const endIdx = Math.min(startIdx + batchSize, TOTAL_FILES);
                     const batchPromises = [];
                     
-                    // Create batch of promises
                     for (let i = startIdx + 1; i <= endIdx; i++) {
                         const paddedNum = i.toString().padStart(3, '0');
                         const filename = `part_${paddedNum}.csv`;
                         batchPromises.push(fetchAndFilterPart(filename, npi));
                     }
                     
-                    // Wait for batch to complete
                     const batchResults = await Promise.all(batchPromises);
                     const batchMatches = batchResults.flat();
                     matchingRows.push(...batchMatches);
                     
                     if (batchMatches.length > 0 && !foundProvider) {
                         foundProvider = true;
-                        displayResults(matchingRows); // Show initial results
+                        displayResults(matchingRows);
                     }
                     
-                    // Update progress
                     const progress = (endIdx / TOTAL_FILES) * 100;
                     updateProgress(progress);
                     
-                    // If we found matches and processed a few more files, we can stop
                     if (foundProvider && matchingRows.length > 0 && endIdx > startIdx + 10) {
                         break;
                     }
@@ -243,7 +238,6 @@
                     throw new Error('No procedures found for this NPI');
                 }
                 
-                // Final display of all results
                 displayResults(matchingRows);
                 
             } catch (error) {
@@ -258,6 +252,7 @@
             try {
                 const response = await fetch(`${GITHUB_BASE_URL}${partFile}`);
                 if (!response.ok) {
+                    console.log(`File ${partFile} not found or inaccessible`);
                     return [];
                 }
 
@@ -267,7 +262,10 @@
                         header: true,
                         skipEmptyLines: true,
                         complete: (results) => {
-                            const matches = results.data.filter(row => row.Rndrng_NPI === npi);
+                            // Convert both to string for comparison
+                            const matches = results.data.filter(row => 
+                                row.Rndrng_NPI && row.Rndrng_NPI.toString() === npi.toString()
+                            );
                             console.log(`Found ${matches.length} matches in ${partFile}`);
                             resolve(matches);
                         }
@@ -280,7 +278,6 @@
         }
 
         function displayResults(rows) {
-            // Display provider info
             const firstRow = rows[0];
             providerInfoDiv.innerHTML = `
                 <h3>Provider Information</h3>
@@ -291,7 +288,6 @@
             `;
             providerInfoDiv.style.display = 'block';
 
-            // Process procedures
             const procedures = {};
             rows.forEach(row => {
                 const code = row.HCPCS_Cd;
@@ -305,7 +301,6 @@
                 }
             });
 
-            // Sort and display top 40
             const topProcedures = Object.values(procedures)
                 .sort((a, b) => b.avgPayment - a.avgPayment)
                 .slice(0, 40);
