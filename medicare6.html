@@ -204,33 +204,34 @@
             try {
                 progressText.textContent = 'Searching through files...';
                 
+                // Process files in smaller batches to avoid overwhelming the browser
                 const batchSize = 5;
                 const matchingRows = [];
                 
-                for (let startIdx = 0; startIdx < TOTAL_FILES; startIdx += batchSize) {
-                    const endIdx = Math.min(startIdx + batchSize, TOTAL_FILES);
+                for (let i = 1; i <= TOTAL_FILES; i += batchSize) {
                     const batchPromises = [];
                     
-                    for (let i = startIdx + 1; i <= endIdx; i++) {
-                        const paddedNum = i.toString().padStart(3, '0');
+                    // Create batch of promises
+                    for (let j = i; j < Math.min(i + batchSize, TOTAL_FILES + 1); j++) {
+                        const paddedNum = j.toString().padStart(3, '0');
                         const filename = `part_${paddedNum}.csv`;
                         batchPromises.push(fetchAndFilterPart(filename, npi));
                     }
                     
+                    // Wait for batch to complete
                     const batchResults = await Promise.all(batchPromises);
                     const batchMatches = batchResults.flat();
                     matchingRows.push(...batchMatches);
                     
+                    // Update progress
+                    const progress = (Math.min(i + batchSize, TOTAL_FILES) / TOTAL_FILES) * 100;
+                    updateProgress(progress);
+                    progressText.textContent = `Searching files ${i} to ${Math.min(i + batchSize - 1, TOTAL_FILES)} of ${TOTAL_FILES}...`;
+                    
+                    // If we found matches, display them immediately
                     if (batchMatches.length > 0 && !foundProvider) {
                         foundProvider = true;
                         displayResults(matchingRows);
-                    }
-                    
-                    const progress = (endIdx / TOTAL_FILES) * 100;
-                    updateProgress(progress);
-                    
-                    if (foundProvider && matchingRows.length > 0 && endIdx > startIdx + 10) {
-                        break;
                     }
                 }
 
@@ -238,7 +239,9 @@
                     throw new Error('No procedures found for this NPI');
                 }
                 
+                // Final display of all results
                 displayResults(matchingRows);
+                progressText.textContent = `Found ${matchingRows.length} procedures`;
                 
             } catch (error) {
                 showError(error.message);
@@ -340,7 +343,6 @@
 
         function updateProgress(percent) {
             progressFill.style.width = `${percent}%`;
-            progressText.textContent = `Processing data... ${Math.round(percent)}%`;
         }
     </script>
 </body>
