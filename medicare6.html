@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPI Procedure Lookup</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .container {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .procedure-card {
+            background-color: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .procedure-details {
+            flex-grow: 1;
+        }
+        .procedure-stats {
+            text-align: right;
+            min-width: 200px;
+        }
+        .payment-amount {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #2c5282;
+        }
+        .service-count {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .loading {
+            display: none;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .provider-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NPI Procedure Lookup</h1>
+        
+        <div class="input-group">
+            <label for="fileInput">Upload Medicare Provider Utilization File (CSV)</label>
+            <input type="file" id="fileInput" accept=".csv">
+        </div>
+
+        <div class="input-group">
+            <label for="npiInput">Enter NPI Number</label>
+            <input type="text" id="npiInput" placeholder="10-digit NPI number" maxlength="10">
+        </div>
+
+        <button id="lookupButton" onclick="lookupProcedures()" disabled>Look Up Procedures</button>
+
+        <div id="loading" class="loading">
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-bar-fill"></div>
+            </div>
+            <div id="progress-text"></div>
+        </div>
+
+        <div id="providerInfo" class="provider-info"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const npiInput = document.getElementById('npiInput');
+        const lookupButton = document.getElementById('lookupButton');
+        const loadingDiv = document.getElementById('loading');
+        const resultsDiv = document.getElementById('results');
+        const providerInfoDiv = document.getElementById('providerInfo');
+        let processedRows = [];
+
+        fileInput.addEventListener('change', () => updateButtonState());
+        npiInput.addEventListener('input', () => updateButtonState());
+
+        function updateButtonState() {
+            lookupButton.disabled = !(fileInput.files.length > 0 && /^\d{10}$/.test(npiInput.value));
+        }
+
+        function lookupProcedures() {
+            const file = fileInput.files[0];
+            const npi = npiInput.value;
+            
+            processedRows = [];
+            resultsDiv.innerHTML = '';
+            providerInfoDiv.innerHTML = '';
+            providerInfoDiv.style.display = 'none';
+            loadingDiv.style.display = 'block';
+
+            Papa.parse(file, {
+                header: true,
+                worker: true,
+                step: function(row, parser) {
+                    if (row.data && row.data.Rndrng_NPI === npi) {
+                        processedRows.push(row.data);
+                    }
+                    
+                    const progress = (row.meta.cursor / file.size) * 100;
+                    document.getElementById('progress-fill').style.width = progress + '%';
+                    document.getElementById('progress-text').textContent = 
+                        `Processing: ${Math.round(progress)}% (${Math.round(row.meta.cursor/1024/1024)}MB of ${Math.round(file.size/1024/1024)}MB)`;
+                },
+                complete: function() {
+                    displayResults(processedRows, npi);
+                    loadingDiv.style.display = 'none';
+                }
+            });
+        }
+
+        function displayResults(rows, npi) {
+            if (rows.length === 0) {
+                resultsDiv.innerHTML = '<p>No procedures found for this NPI</p>';
+                return;
+            }
+
+            // Display provider info from first row
+            const firstRow = rows[0];
+            providerInfoDiv.innerHTML = `
+                <h3>Provider Information</h3>
+                <p><strong>${firstRow.Rndrng_Prvdr_Last_Org_Name}, ${firstRow.Rndrng_Prvdr_First_Name} ${firstRow.Rndrng_Prvdr_MI || ''} ${firstRow.Rndrng_Prvdr_Crdntls || ''}</strong><br>
+                ${firstRow.Rndrng_Prvdr_Type}<br>
+                ${firstRow.Rndrng_Prvdr_St1}<br>
+                ${firstRow.Rndrng_Prvdr_City}, ${firstRow.Rndrng_Prvdr_State_Abrvtn} ${firstRow.Rndrng_Prvdr_Zip5}</p>
+            `;
+            providerInfoDiv.style.display = 'block';
+
+            // Group procedures by HCPCS code
+            const procedures = {};
+            rows.forEach(row => {
+                const code = row.HCPCS_Cd;
+                if (!procedures[code]) {
+                    procedures[code] = {
+                        code: code,
+                        description: row.HCPCS_Desc,
+                        services: parseInt(row.Tot_Srvcs) || 0,
+                        avgPayment: parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0
+                    };
+                }
+            });
+
+            // Sort by average Medicare payment and get top 40
+            const topProcedures = Object.values(procedures)
+                .sort((a, b) => b.avgPayment - a.avgPayment)
+                .slice(0, 40);
+
+            resultsDiv.innerHTML = `
+                <h2>Top 40 Procedures by Medicare Payment</h2>
+                <p><small>Sorted by average Medicare payment amount</small></p>
+            `;
+            
+            topProcedures.forEach((proc, index) => {
+                const card = document.createElement('div');
+                card.className = 'procedure-card';
+                card.innerHTML = `
+                    <div class="procedure-details">
+                        <h3>${index + 1}. ${proc.code}</h3>
+                        <p>${proc.description}</p>
+                    </div>
+                    <div class="procedure-stats">
+                        <div class="payment-amount">${proc.avgPayment.toFixed(2)}</div>
+                        <div class="service-count">${proc.services.toLocaleString()} services</div>
+                    </div>
+                `;
+                resultsDiv.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
