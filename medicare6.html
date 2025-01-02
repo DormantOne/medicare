@@ -12,9 +12,10 @@
             margin: 20px auto;
             padding: 0 20px;
             line-height: 1.6;
+            background-color: #f0f2f5;
         }
         .container {
-            background-color: #f8f9fa;
+            background-color: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -26,22 +27,34 @@
             display: block;
             margin-bottom: 5px;
             font-weight: bold;
+            color: #333;
         }
         input {
-            padding: 8px;
+            padding: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
             width: 100%;
             max-width: 300px;
             box-sizing: border-box;
+            font-size: 16px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 2px rgba(13,110,253,0.2);
         }
         button {
             background-color: #0d6efd;
             color: white;
-            padding: 10px 20px;
+            padding: 12px 24px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0b5ed7;
         }
         button:disabled {
             background-color: #ccc;
@@ -52,43 +65,82 @@
             margin: 20px 0;
         }
         .provider-info {
-            background-color: #e9ecef;
-            padding: 15px;
-            border-radius: 4px;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
             margin-bottom: 20px;
             display: none;
+            border: 1px solid #e9ecef;
         }
         .procedure-card {
             background-color: white;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
+            padding: 20px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .procedure-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .procedure-details {
+            flex-grow: 1;
+        }
+        .procedure-details h3 {
+            margin: 0 0 8px 0;
+            color: #2c5282;
+        }
+        .procedure-stats {
+            text-align: right;
+            min-width: 150px;
+        }
+        .payment-amount {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #2c5282;
+        }
+        .service-count {
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 4px;
         }
         .error {
             color: #dc3545;
-            padding: 10px;
-            margin: 10px 0;
+            padding: 12px;
+            margin: 12px 0;
             display: none;
+            background-color: #fff5f5;
+            border-radius: 4px;
+            border: 1px solid #dc3545;
         }
         .progress {
             display: none;
             margin: 20px 0;
         }
         .progress-bar {
-            height: 20px;
-            background-color: #f0f0f0;
-            border-radius: 10px;
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
             overflow: hidden;
+            margin-bottom: 8px;
         }
         .progress-fill {
             height: 100%;
             background-color: #0d6efd;
             width: 0%;
             transition: width 0.3s ease;
+        }
+        .progress-text {
+            font-size: 0.875rem;
+            color: #666;
+        }
+        #results h2 {
+            margin: 24px 0 16px;
+            color: #2c5282;
         }
     </style>
 </head>
@@ -98,7 +150,13 @@
         
         <div class="input-group">
             <label for="npiInput">Enter NPI Number</label>
-            <input type="text" id="npiInput" placeholder="10-digit NPI number" maxlength="10">
+            <input 
+                type="text" 
+                id="npiInput" 
+                placeholder="Enter 10-digit NPI number" 
+                maxlength="10"
+                pattern="\d{10}"
+            >
         </div>
 
         <button id="lookupButton" onclick="lookupProcedures()">Look Up Procedures</button>
@@ -109,7 +167,7 @@
             <div class="progress-bar">
                 <div id="progressFill" class="progress-fill"></div>
             </div>
-            <div id="progressText"></div>
+            <div id="progressText" class="progress-text">Searching for provider data...</div>
         </div>
 
         <div id="providerInfo" class="provider-info"></div>
@@ -117,34 +175,34 @@
     </div>
 
     <script>
-        // Configuration - UPDATE THIS WITH YOUR GITHUB REPO INFO
+        // Configuration
         const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/dormantone/medicare/split_files/';
         
-        async function lookupProcedures() {
-            const npi = document.getElementById('npiInput').value;
-            const errorDiv = document.getElementById('error');
-            const progressDiv = document.getElementById('progress');
-            const resultsDiv = document.getElementById('results');
-            const providerInfoDiv = document.getElementById('providerInfo');
-            const lookupButton = document.getElementById('lookupButton');
-            
-            // Validate NPI
-            if (!/^\d{10}$/.test(npi)) {
-                errorDiv.textContent = 'Please enter a valid 10-digit NPI number';
-                errorDiv.style.display = 'block';
-                return;
-            }
+        // DOM Elements
+        const npiInput = document.getElementById('npiInput');
+        const lookupButton = document.getElementById('lookupButton');
+        const errorDiv = document.getElementById('error');
+        const progressDiv = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const providerInfoDiv = document.getElementById('providerInfo');
+        const resultsDiv = document.getElementById('results');
 
-            // Reset UI
+        // Input validation
+        npiInput.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '');
+            lookupButton.disabled = !/^\d{10}$/.test(this.value);
             errorDiv.style.display = 'none';
-            progressDiv.style.display = 'block';
-            resultsDiv.innerHTML = '';
-            providerInfoDiv.innerHTML = '';
-            providerInfoDiv.style.display = 'none';
-            lookupButton.disabled = true;
+        });
+
+        async function lookupProcedures() {
+            const npi = npiInput.value;
+            
+            // Reset UI
+            resetUI();
 
             try {
-                // Calculate which part files to check based on NPI
+                // Find and process matching files
                 const parts = await findPartsWithNPI(npi);
                 
                 if (parts.length === 0) {
@@ -152,9 +210,16 @@
                 }
 
                 const matchingRows = [];
+                let processedParts = 0;
+
                 for (const part of parts) {
                     const rows = await fetchAndFilterPart(part, npi);
                     matchingRows.push(...rows);
+                    
+                    // Update progress
+                    processedParts++;
+                    const progress = (processedParts / parts.length) * 100;
+                    updateProgress(progress);
                 }
 
                 if (matchingRows.length === 0) {
@@ -163,8 +228,7 @@
 
                 displayResults(matchingRows);
             } catch (error) {
-                errorDiv.textContent = error.message;
-                errorDiv.style.display = 'block';
+                showError(error.message);
             } finally {
                 progressDiv.style.display = 'none';
                 lookupButton.disabled = false;
@@ -172,37 +236,46 @@
         }
 
         async function findPartsWithNPI(npi) {
-            // We'll need to implement this based on how we split the files
-            // For now, let's check all parts
-            const parts = [];
-            for (let i = 1; i <= 120; i++) {
-                parts.push(`part_${i.toString().padStart(3, '0')}.csv`);
+            const startingPart = Math.floor((parseInt(npi) % 1000000000) / 8000000) + 1;
+            const filesToTry = [];
+            
+            // Try a range of files around the calculated starting point
+            const range = 5;
+            for (let i = Math.max(1, startingPart - range); i <= startingPart + range; i++) {
+                filesToTry.push(`part_${i.toString().padStart(3, '0')}.csv`);
             }
-            return parts;
+            
+            return filesToTry;
         }
 
         async function fetchAndFilterPart(partFile, npi) {
-            const response = await fetch(`${GITHUB_BASE_URL}${partFile}`);
-            if (!response.ok) {
+            console.log(`Trying to fetch ${GITHUB_BASE_URL}${partFile}`);
+            try {
+                const response = await fetch(`${GITHUB_BASE_URL}${partFile}`);
+                if (!response.ok) {
+                    console.log(`File ${partFile} not found or inaccessible`);
+                    return [];
+                }
+
+                const text = await response.text();
+                return new Promise((resolve) => {
+                    Papa.parse(text, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            const matches = results.data.filter(row => row.Rndrng_NPI === npi);
+                            console.log(`Found ${matches.length} matches in ${partFile}`);
+                            resolve(matches);
+                        }
+                    });
+                });
+            } catch (error) {
+                console.error(`Error processing ${partFile}:`, error);
                 return [];
             }
-
-            const text = await response.text();
-            return new Promise((resolve) => {
-                Papa.parse(text, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        resolve(results.data.filter(row => row.Rndrng_NPI === npi));
-                    }
-                });
-            });
         }
 
         function displayResults(rows) {
-            const providerInfoDiv = document.getElementById('providerInfo');
-            const resultsDiv = document.getElementById('results');
-            
             // Display provider info
             const firstRow = rows[0];
             providerInfoDiv.innerHTML = `
@@ -250,11 +323,26 @@
             });
         }
 
-        // Add input validation
-        document.getElementById('npiInput').addEventListener('input', function() {
-            const lookupButton = document.getElementById('lookupButton');
-            lookupButton.disabled = !/^\d{10}$/.test(this.value);
-        });
+        function resetUI() {
+            errorDiv.style.display = 'none';
+            progressDiv.style.display = 'block';
+            resultsDiv.innerHTML = '';
+            providerInfoDiv.innerHTML = '';
+            providerInfoDiv.style.display = 'none';
+            lookupButton.disabled = true;
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Searching for provider data...';
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function updateProgress(percent) {
+            progressFill.style.width = `${percent}%`;
+            progressText.textContent = `Processing data... ${Math.round(percent)}%`;
+        }
     </script>
 </body>
 </html>
