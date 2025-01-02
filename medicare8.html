@@ -162,7 +162,12 @@
     const GITHUB_BASE_URL_INDEX = 'https://raw.githubusercontent.com/DormantOne/medicare/main/';
 
     // Known index files in main
-    // Each file's structure should map an NPI -> an object that includes { name, files: [...csv parts...] }
+    // Each file's structure is:
+    // {
+    //   "1003000126": { "name": "ENKESHAFI, Ardalan", "chunk": 1 },
+    //   "1003000134": { "name": "CIBULL, Thomas",   "chunk": 1 },
+    //   ...
+    // }
     const indexFiles = [
       'npi_index_1003000126-1194990077.json',
       'npi_index_1194990135-1396971040.json',
@@ -197,7 +202,7 @@
     searchInput.addEventListener('input', function() {
       const isNPI = document.querySelector('input[name="searchType"]:checked').value === 'npi';
       if (isNPI) {
-        this.value = this.value.replace(/\D/g, ''); // remove non-digits
+        this.value = this.value.replace(/\D/g, ''); // keep only digits
         lookupButton.disabled = !/^\d{10}$/.test(this.value);
       } else {
         // For name-based search, require at least 3 characters
@@ -234,27 +239,16 @@
       const searchValue = searchInput.value.trim();
 
       if (searchType === 'npi') {
-        // Step 1: Use the index JSON to find which CSV file(s) contain this NPI
-        const csvFiles = await findCSVChunksForNPI(searchValue);
-        if (!csvFiles || csvFiles.length === 0) {
-          // If the index doesn't know about this NPI
-          resultsDiv.innerHTML = `<p>No index entry found for NPI ${searchValue}.</p>`;
-          loadingDiv.style.display = 'none';
-          lookupButton.disabled = false;
-          return;
-        }
-
-        // Step 2: Once we know the chunk(s), fetch them and parse
-        await fetchNpiDataFromChunks(searchValue, csvFiles);
+        await lookupByNPIFromIndex(searchValue);
       } else {
         // Name-based search
         const matches = await findProvidersByName(searchValue);
         if (matches.length === 0) {
-          resultsDiv.innerHTML = '<p>No providers found matching this name.</p>';
+          resultsDiv.innerHTML = `<p>No providers found matching "${searchValue}".</p>`;
           loadingDiv.style.display = 'none';
           lookupButton.disabled = false;
         } else if (matches.length === 1) {
-          // If exactly 1 match, we have the NPI
+          // If exactly 1 match, we have the NPI, so do the chunk-based fetch
           await lookupByNPIFromIndex(matches[0].npi);
         } else {
           // Show multiple potential matches
@@ -265,7 +259,7 @@
       }
     }
 
-    // ---------------- SEARCH BY NAME -----------------
+    // ---------------- NAME SEARCH -----------------
     async function findProvidersByName(name) {
       const nameUpper = name.toUpperCase();
       const matches = [];
@@ -275,16 +269,13 @@
           progressText.textContent = `Searching index file: ${fileName} ...`;
           const indexUrl = GITHUB_BASE_URL_INDEX + fileName;
           const indexResponse = await fetch(indexUrl);
-          if (!indexResponse.ok) continue; // skip if we can't load
+          if (!indexResponse.ok) continue;
 
           const indexData = await indexResponse.json();
-          // indexData presumably has structure: { [npi]: { name, files: [...]} }
+          // indexData is { "1003000126": { "name": "...", "chunk": 1 }, ... }
 
           for (const [npi, providerData] of Object.entries(indexData)) {
-            if (
-              providerData.name &&
-              providerData.name.toUpperCase().includes(nameUpper)
-            ) {
+            if (providerData.name && providerData.name.toUpperCase().includes(nameUpper)) {
               matches.push({ npi, ...providerData });
             }
           }
@@ -296,7 +287,6 @@
       return matches;
     }
 
-    // If user clicks a matching provider from the name search results
     function displayProviderOptions(providers) {
       providerList.style.display = 'block';
       providerList.innerHTML = '<h3>Select a Provider:</h3>';
@@ -316,11 +306,35 @@
       });
     }
 
-    // ---------------- SEARCH BY NPI (via index) -----------------
-    /**
-     * 1) Look in each index JSON to find which file(s) hold the given NPI
-     */
-    async function findCSVChunksForNPI(npi) {
+    // ---------------- NPI LOOKUP (FROM INDEX) -----------------
+    async function lookupByNPIFromIndex(npi) {
+      resetUI();
+
+      // 1) Find the chunk for this NPI
+      const chunkNumber = await findChunkForNPI(npi);
+      if (!chunkNumber) {
+        resultsDiv.innerHTML = `<p>No index entry found for NPI ${npi}.</p>`;
+        loadingDiv.style.display = 'none';
+        lookupButton.disabled = false;
+        return;
+      }
+
+      // 2) Convert chunk number => part_XXX.csv
+      const paddedChunk = chunkNumber.toString().padStart(3, '0');
+      const csvFile = `part_${paddedChunk}.csv`;
+
+      // 3) Fetch that CSV file from the split_files branch & parse
+      progressText.textContent = `Fetching data from ${csvFile}...`;
+      progressFill.style.width = '50%'; // arbitrary progress indicator
+      const matchedRows = await fetchAndProcessFile(csvFile, npi);
+
+      displayResults(matchedRows);
+      loadingDiv.style.display = 'none';
+      lookupButton.disabled = false;
+    }
+
+    // find which chunk # to use for a single NPI
+    async function findChunkForNPI(npi) {
       for (const fileName of indexFiles) {
         const indexUrl = GITHUB_BASE_URL_INDEX + fileName;
         try {
@@ -329,57 +343,14 @@
 
           const indexData = await resp.json();
           if (indexData[npi]) {
-            // found the NPI in this index file
-            return indexData[npi].files || [];
+            return indexData[npi].chunk; // integer
           }
         } catch (err) {
           console.error(`Error reading index file ${fileName}`, err);
         }
       }
-      // Not found in any index
-      return [];
-    }
-
-    /**
-     * 2) Once we have the chunk files for a given NPI, we load them and parse.
-     */
-    async function fetchNpiDataFromChunks(npi, csvFiles) {
-      let processedRows = [];
-      let currentFileIndex = 0;
-
-      for (const csvFile of csvFiles) {
-        currentFileIndex++;
-        progressText.textContent = `Fetching data from ${csvFile} (${currentFileIndex} of ${csvFiles.length})...`;
-        // For a single chunk, we parse it
-        try {
-          const chunkMatches = await fetchAndProcessFile(csvFile, npi);
-          // Accumulate all matched rows in processedRows
-          processedRows = processedRows.concat(chunkMatches);
-        } catch (error) {
-          console.error('Error fetching CSV chunk:', error);
-        }
-
-        // Optional: update progress bar based on how many chunks total
-        const progress = (currentFileIndex / csvFiles.length) * 100;
-        progressFill.style.width = progress + '%';
-      }
-
-      displayResults(processedRows);
-      loadingDiv.style.display = 'none';
-      lookupButton.disabled = false;
-    }
-
-    // Helper for name-based search: once we have an NPI, do the same steps
-    async function lookupByNPIFromIndex(npi) {
-      resetUI();
-      const csvFiles = await findCSVChunksForNPI(npi);
-      if (!csvFiles || csvFiles.length === 0) {
-        resultsDiv.innerHTML = `<p>No index entry found for NPI ${npi}.</p>`;
-        loadingDiv.style.display = 'none';
-        lookupButton.disabled = false;
-        return;
-      }
-      await fetchNpiDataFromChunks(npi, csvFiles);
+      // not found in any index
+      return null;
     }
 
     // ---------------- FETCH & PARSE CSV -----------------
@@ -401,7 +372,6 @@
               }
             },
             complete: function() {
-              // console.log(`Found ${matches.length} matches in ${filename}`);
               resolve(matches);
             }
           });
@@ -448,10 +418,10 @@
             avgPayment: parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0
           };
         } else {
-          // If the same code appears multiple times across chunks, we could sum up totals
+          // If a chunk might contain multiple entries for the same code, sum the services
           procedures[code].services += parseInt(row.Tot_Srvcs) || 0;
-          // For avgPayment, you might want to average them or keep the last seen
-          // For simplicity, let's assume each chunk has the same info.
+          // For avgPayment, you may want to average them if they differ,
+          // but typically they might be the same. Here we just keep the last.
         }
       });
 
