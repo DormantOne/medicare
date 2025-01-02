@@ -8,12 +8,13 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1000px;
             margin: 20px auto;
             padding: 0 20px;
+            line-height: 1.6;
         }
         .container {
-            background-color: #f9f9f9;
+            background-color: #f8f9fa;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -31,10 +32,11 @@
             border: 1px solid #ddd;
             border-radius: 4px;
             width: 100%;
+            max-width: 300px;
             box-sizing: border-box;
         }
         button {
-            background-color: #007bff;
+            background-color: #0d6efd;
             color: white;
             padding: 10px 20px;
             border: none;
@@ -42,8 +44,19 @@
             cursor: pointer;
         }
         button:disabled {
-            background-color: #cccccc;
+            background-color: #ccc;
             cursor: not-allowed;
+        }
+        .loading {
+            display: none;
+            margin: 20px 0;
+        }
+        .provider-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
         }
         .procedure-card {
             background-color: white;
@@ -55,47 +68,27 @@
             justify-content: space-between;
             align-items: center;
         }
-        .procedure-details {
-            flex-grow: 1;
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            margin: 10px 0;
+            display: none;
         }
-        .procedure-stats {
-            text-align: right;
-            min-width: 200px;
-        }
-        .payment-amount {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #2c5282;
-        }
-        .service-count {
-            color: #666;
-            font-size: 0.9em;
-        }
-        .loading {
+        .progress {
             display: none;
             margin: 20px 0;
-            text-align: center;
         }
         .progress-bar {
-            width: 100%;
             height: 20px;
             background-color: #f0f0f0;
             border-radius: 10px;
             overflow: hidden;
-            margin-bottom: 10px;
         }
-        .progress-bar-fill {
+        .progress-fill {
             height: 100%;
-            background-color: #4CAF50;
-            transition: width 0.3s ease;
+            background-color: #0d6efd;
             width: 0%;
-        }
-        .provider-info {
-            background-color: #e9ecef;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            display: none;
+            transition: width 0.3s ease;
         }
     </style>
 </head>
@@ -104,22 +97,19 @@
         <h1>NPI Procedure Lookup</h1>
         
         <div class="input-group">
-            <label for="fileInput">Upload Medicare Provider Utilization File (CSV)</label>
-            <input type="file" id="fileInput" accept=".csv">
-        </div>
-
-        <div class="input-group">
             <label for="npiInput">Enter NPI Number</label>
             <input type="text" id="npiInput" placeholder="10-digit NPI number" maxlength="10">
         </div>
 
-        <button id="lookupButton" onclick="lookupProcedures()" disabled>Look Up Procedures</button>
+        <button id="lookupButton" onclick="lookupProcedures()">Look Up Procedures</button>
 
-        <div id="loading" class="loading">
+        <div id="error" class="error"></div>
+        
+        <div id="progress" class="progress">
             <div class="progress-bar">
-                <div id="progress-fill" class="progress-bar-fill"></div>
+                <div id="progressFill" class="progress-fill"></div>
             </div>
-            <div id="progress-text"></div>
+            <div id="progressText"></div>
         </div>
 
         <div id="providerInfo" class="provider-info"></div>
@@ -127,58 +117,93 @@
     </div>
 
     <script>
-        const fileInput = document.getElementById('fileInput');
-        const npiInput = document.getElementById('npiInput');
-        const lookupButton = document.getElementById('lookupButton');
-        const loadingDiv = document.getElementById('loading');
-        const resultsDiv = document.getElementById('results');
-        const providerInfoDiv = document.getElementById('providerInfo');
-        let processedRows = [];
-
-        fileInput.addEventListener('change', () => updateButtonState());
-        npiInput.addEventListener('input', () => updateButtonState());
-
-        function updateButtonState() {
-            lookupButton.disabled = !(fileInput.files.length > 0 && /^\d{10}$/.test(npiInput.value));
-        }
-
-        function lookupProcedures() {
-            const file = fileInput.files[0];
-            const npi = npiInput.value;
+        // Configuration - UPDATE THIS WITH YOUR GITHUB REPO INFO
+        const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/split_output/';
+        
+        async function lookupProcedures() {
+            const npi = document.getElementById('npiInput').value;
+            const errorDiv = document.getElementById('error');
+            const progressDiv = document.getElementById('progress');
+            const resultsDiv = document.getElementById('results');
+            const providerInfoDiv = document.getElementById('providerInfo');
+            const lookupButton = document.getElementById('lookupButton');
             
-            processedRows = [];
-            resultsDiv.innerHTML = '';
-            providerInfoDiv.innerHTML = '';
-            providerInfoDiv.style.display = 'none';
-            loadingDiv.style.display = 'block';
-
-            Papa.parse(file, {
-                header: true,
-                worker: true,
-                step: function(row, parser) {
-                    if (row.data && row.data.Rndrng_NPI === npi) {
-                        processedRows.push(row.data);
-                    }
-                    
-                    const progress = (row.meta.cursor / file.size) * 100;
-                    document.getElementById('progress-fill').style.width = progress + '%';
-                    document.getElementById('progress-text').textContent = 
-                        `Processing: ${Math.round(progress)}% (${Math.round(row.meta.cursor/1024/1024)}MB of ${Math.round(file.size/1024/1024)}MB)`;
-                },
-                complete: function() {
-                    displayResults(processedRows, npi);
-                    loadingDiv.style.display = 'none';
-                }
-            });
-        }
-
-        function displayResults(rows, npi) {
-            if (rows.length === 0) {
-                resultsDiv.innerHTML = '<p>No procedures found for this NPI</p>';
+            // Validate NPI
+            if (!/^\d{10}$/.test(npi)) {
+                errorDiv.textContent = 'Please enter a valid 10-digit NPI number';
+                errorDiv.style.display = 'block';
                 return;
             }
 
-            // Display provider info from first row
+            // Reset UI
+            errorDiv.style.display = 'none';
+            progressDiv.style.display = 'block';
+            resultsDiv.innerHTML = '';
+            providerInfoDiv.innerHTML = '';
+            providerInfoDiv.style.display = 'none';
+            lookupButton.disabled = true;
+
+            try {
+                // Calculate which part files to check based on NPI
+                const parts = await findPartsWithNPI(npi);
+                
+                if (parts.length === 0) {
+                    throw new Error('No data found for this NPI');
+                }
+
+                const matchingRows = [];
+                for (const part of parts) {
+                    const rows = await fetchAndFilterPart(part, npi);
+                    matchingRows.push(...rows);
+                }
+
+                if (matchingRows.length === 0) {
+                    throw new Error('No procedures found for this NPI');
+                }
+
+                displayResults(matchingRows);
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                progressDiv.style.display = 'none';
+                lookupButton.disabled = false;
+            }
+        }
+
+        async function findPartsWithNPI(npi) {
+            // We'll need to implement this based on how we split the files
+            // For now, let's check all parts
+            const parts = [];
+            for (let i = 1; i <= 120; i++) {
+                parts.push(`part_${i.toString().padStart(3, '0')}.csv`);
+            }
+            return parts;
+        }
+
+        async function fetchAndFilterPart(partFile, npi) {
+            const response = await fetch(`${GITHUB_BASE_URL}${partFile}`);
+            if (!response.ok) {
+                return [];
+            }
+
+            const text = await response.text();
+            return new Promise((resolve) => {
+                Papa.parse(text, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        resolve(results.data.filter(row => row.Rndrng_NPI === npi));
+                    }
+                });
+            });
+        }
+
+        function displayResults(rows) {
+            const providerInfoDiv = document.getElementById('providerInfo');
+            const resultsDiv = document.getElementById('results');
+            
+            // Display provider info
             const firstRow = rows[0];
             providerInfoDiv.innerHTML = `
                 <h3>Provider Information</h3>
@@ -189,7 +214,7 @@
             `;
             providerInfoDiv.style.display = 'block';
 
-            // Group procedures by HCPCS code
+            // Process procedures
             const procedures = {};
             rows.forEach(row => {
                 const code = row.HCPCS_Cd;
@@ -203,32 +228,33 @@
                 }
             });
 
-            // Sort by average Medicare payment and get top 40
+            // Sort and display top 40
             const topProcedures = Object.values(procedures)
                 .sort((a, b) => b.avgPayment - a.avgPayment)
                 .slice(0, 40);
 
-            resultsDiv.innerHTML = `
-                <h2>Top 40 Procedures by Medicare Payment</h2>
-                <p><small>Sorted by average Medicare payment amount</small></p>
-            `;
-            
+            resultsDiv.innerHTML = '<h2>Top 40 Procedures by Medicare Payment</h2>';
             topProcedures.forEach((proc, index) => {
-                const card = document.createElement('div');
-                card.className = 'procedure-card';
-                card.innerHTML = `
-                    <div class="procedure-details">
-                        <h3>${index + 1}. ${proc.code}</h3>
-                        <p>${proc.description}</p>
-                    </div>
-                    <div class="procedure-stats">
-                        <div class="payment-amount">${proc.avgPayment.toFixed(2)}</div>
-                        <div class="service-count">${proc.services.toLocaleString()} services</div>
+                resultsDiv.innerHTML += `
+                    <div class="procedure-card">
+                        <div class="procedure-details">
+                            <h3>${index + 1}. ${proc.code}</h3>
+                            <p>${proc.description}</p>
+                        </div>
+                        <div class="procedure-stats">
+                            <div class="payment-amount">$${proc.avgPayment.toFixed(2)}</div>
+                            <div class="service-count">${proc.services.toLocaleString()} services</div>
+                        </div>
                     </div>
                 `;
-                resultsDiv.appendChild(card);
             });
         }
+
+        // Add input validation
+        document.getElementById('npiInput').addEventListener('input', function() {
+            const lookupButton = document.getElementById('lookupButton');
+            lookupButton.disabled = !/^\d{10}$/.test(this.value);
+        });
     </script>
 </body>
 </html>
