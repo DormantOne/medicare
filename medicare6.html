@@ -176,7 +176,8 @@
 
     <script>
         // Configuration
-        const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/dormantone/medicare/split_files/';
+        const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
+        const TOTAL_FILES = 123; // Total number of split files
         
         // DOM Elements
         const npiInput = document.getElementById('npiInput');
@@ -197,36 +198,54 @@
 
         async function lookupProcedures() {
             const npi = npiInput.value;
-            
-            // Reset UI
             resetUI();
+            let foundProvider = false;
 
             try {
-                // Find and process matching files
-                const parts = await findPartsWithNPI(npi);
+                progressText.textContent = 'Searching through files...';
                 
-                if (parts.length === 0) {
-                    throw new Error('No data found for this NPI');
-                }
-
+                // Search through all files in batches
+                const batchSize = 5; // Number of concurrent requests
                 const matchingRows = [];
-                let processedParts = 0;
-
-                for (const part of parts) {
-                    const rows = await fetchAndFilterPart(part, npi);
-                    matchingRows.push(...rows);
+                
+                for (let startIdx = 0; startIdx < TOTAL_FILES; startIdx += batchSize) {
+                    const endIdx = Math.min(startIdx + batchSize, TOTAL_FILES);
+                    const batchPromises = [];
+                    
+                    // Create batch of promises
+                    for (let i = startIdx + 1; i <= endIdx; i++) {
+                        const paddedNum = i.toString().padStart(3, '0');
+                        const filename = `part_${paddedNum}.csv`;
+                        batchPromises.push(fetchAndFilterPart(filename, npi));
+                    }
+                    
+                    // Wait for batch to complete
+                    const batchResults = await Promise.all(batchPromises);
+                    const batchMatches = batchResults.flat();
+                    matchingRows.push(...batchMatches);
+                    
+                    if (batchMatches.length > 0 && !foundProvider) {
+                        foundProvider = true;
+                        displayResults(matchingRows); // Show initial results
+                    }
                     
                     // Update progress
-                    processedParts++;
-                    const progress = (processedParts / parts.length) * 100;
+                    const progress = (endIdx / TOTAL_FILES) * 100;
                     updateProgress(progress);
+                    
+                    // If we found matches and processed a few more files, we can stop
+                    if (foundProvider && matchingRows.length > 0 && endIdx > startIdx + 10) {
+                        break;
+                    }
                 }
 
                 if (matchingRows.length === 0) {
                     throw new Error('No procedures found for this NPI');
                 }
-
+                
+                // Final display of all results
                 displayResults(matchingRows);
+                
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -235,25 +254,10 @@
             }
         }
 
-        async function findPartsWithNPI(npi) {
-            const startingPart = Math.floor((parseInt(npi) % 1000000000) / 8000000) + 1;
-            const filesToTry = [];
-            
-            // Try a range of files around the calculated starting point
-            const range = 5;
-            for (let i = Math.max(1, startingPart - range); i <= startingPart + range; i++) {
-                filesToTry.push(`part_${i.toString().padStart(3, '0')}.csv`);
-            }
-            
-            return filesToTry;
-        }
-
         async function fetchAndFilterPart(partFile, npi) {
-            console.log(`Trying to fetch ${GITHUB_BASE_URL}${partFile}`);
             try {
                 const response = await fetch(`${GITHUB_BASE_URL}${partFile}`);
                 if (!response.ok) {
-                    console.log(`File ${partFile} not found or inaccessible`);
                     return [];
                 }
 
