@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pittsburgh Medicare Provider Search</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .provider-card:hover {
+            transform: translateY(-2px);
+            transition: transform 0.2s;
+        }
+        .checkbox-label:hover {
+            background-color: #f3f4f6;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="max-w-4xl mx-auto p-4">
+        <div class="bg-white rounded-lg shadow p-6">
+            <h1 class="text-2xl font-bold mb-6">Pittsburgh Medicare Provider Search</h1>
+            
+            <!-- Search Form -->
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Provider Last Name</label>
+                    <input
+                        type="text"
+                        id="lastName"
+                        class="w-full p-2 border rounded"
+                        placeholder="Enter name, or select location(s) to see all providers there"
+                    >
+                </div>
+                
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium mb-2">Locations</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center checkbox-label p-2">
+                            <input type="checkbox" name="location" value="" class="mr-2" id="allUS">
+                            All United States
+                        </label>
+                        <label class="flex items-center checkbox-label p-2">
+                            <input type="checkbox" name="location" value="pittsburgh" class="mr-2">
+                            Pittsburgh (All Locations)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15232" class="mr-2">
+                            Shadyside Hospital (15232)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15213" class="mr-2">
+                            Magee/Presbyterian (15213)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15219" class="mr-2">
+                            Mercy Hospital (15219)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15132" class="mr-2">
+                            McKeesport Hospital (15132)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15237" class="mr-2">
+                            Passavant Hospital (15237)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="p-3 bg-gray-50 rounded">
+                    <div class="text-sm font-medium mb-2">Selected Locations:</div>
+                    <div id="selectedLocations" class="text-sm text-gray-600">
+                        No locations selected - please select at least one location or enter a name
+                    </div>
+                </div>
+                
+                <button
+                    id="searchButton"
+                    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-400"
+                >
+                    Search
+                </button>
+            </div>
+
+            <!-- Progress Indicators -->
+            <div id="progressIndicator" class="hidden space-y-2 mb-4">
+                <div class="text-sm font-medium">Search Progress:</div>
+                <div id="jsonProgress" class="text-sm text-gray-600"></div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div id="jsonProgressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <div id="csvProgress" class="text-sm text-gray-600 hidden"></div>
+                <div id="csvProgressContainer" class="w-full bg-gray-200 rounded-full h-2.5 mb-4 hidden">
+                    <div id="csvProgressBar" class="bg-green-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="hidden text-red-500 mb-4 p-3 bg-red-50 rounded"></div>
+
+            <!-- Results Container -->
+            <div id="providersContainer" class="hidden">
+                <h2 class="text-xl font-semibold mb-4">Found Providers</h2>
+                <div id="providersList" class="space-y-4"></div>
+            </div>
+
+            <!-- Provider Details -->
+            <div id="providerDetails" class="hidden">
+                <button id="backButton" class="mb-4 text-blue-500 hover:text-blue-600">
+                    ← Back to provider list
+                </button>
+                <div id="selectedProviderInfo" class="bg-gray-50 p-4 rounded mb-6"></div>
+                <div id="proceduresList" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GITHUB_BASE_URL_FILES = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
+        const GITHUB_BASE_URL_INDEX = 'https://raw.githubusercontent.com/DormantOne/medicare/main/';
+
+        const INDEX_FILES = [
+            'expanded_npi_index_01_1003000126-1093087314.json',
+            'expanded_npi_index_02_1093087504-1184088171.json',
+            'expanded_npi_index_03_1184088189-1275256612.json',
+            'expanded_npi_index_04_1275257784-1366438699.json',
+            'expanded_npi_index_05_1366438715-1457407470.json',
+            'expanded_npi_index_06_1457407488-1548359466.json',
+            'expanded_npi_index_07_1548359474-1639298656.json',
+            'expanded_npi_index_08_1639298789-1720286552.json',
+            'expanded_npi_index_09_1720286578-1811504210.json',
+            'expanded_npi_index_10_1811504319-1902846207.json',
+            'expanded_npi_index_11_1902846215-1992817613.json',
+            'expanded_npi_index_12_1992817647-1992999874.json'
+        ];
+
+        const LOCATION_MAP = {
+            '': 'All United States',
+            'pittsburgh': 'Pittsburgh (All Locations)',
+            '15232': 'Shadyside Hospital (15232)',
+            '15213': 'Magee/Presbyterian (15213)',
+            '15219': 'Mercy Hospital (15219)',
+            '15132': 'McKeesport Hospital (15132)',
+            '15237': 'Passavant Hospital (15237)'
+        };
+
+        const PITTSBURGH_ZIPS = ['15232', '15213', '15219', '15132', '15237'];
+
+        // DOM Elements
+        const elements = {
+            lastName: document.getElementById('lastName'),
+            searchButton: document.getElementById('searchButton'),
+            progressIndicator: document.getElementById('progressIndicator'),
+            jsonProgress: document.getElementById('jsonProgress'),
+            jsonProgressBar: document.getElementById('jsonProgressBar'),
+            csvProgress: document.getElementById('csvProgress'),
+            csvProgressContainer: document.getElementById('csvProgressContainer'),
+            csvProgressBar: document.getElementById('csvProgressBar'),
+            errorMessage: document.getElementById('errorMessage'),
+            providersContainer: document.getElementById('providersContainer'),
+            providersList: document.getElementById('providersList'),
+            providerDetails: document.getElementById('providerDetails'),
+            selectedProviderInfo: document.getElementById('selectedProviderInfo'),
+            proceduresList: document.getElementById('proceduresList'),
+            backButton: document.getElementById('backButton'),
+            selectedLocations: document.getElementById('selectedLocations'),
+            allUS: document.getElementById('allUS')
+        };
+
+        function updateSelectedLocations() {
+            const checkboxes = document.querySelectorAll('input[name="location"]:checked');
+            const locations = Array.from(checkboxes).map(cb => LOCATION_MAP[cb.value]);
+
+            if (locations.length === 0) {
+                elements.selectedLocations.textContent = 'No locations selected - please select at least one location or enter a name';
+            } else {
+                elements.selectedLocations.textContent = locations.join(', ');
+            }
+        }
+
+        // Handle checkbox logic
+        document.querySelectorAll('input[name="location"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const isAllUS = this.value === '';
+                const isPittsburgh = this.value === 'pittsburgh';
+
+                if (isAllUS && this.checked) {
+                    // If "All US" is checked, uncheck all others
+                    document.querySelectorAll('input[name="location"]').forEach(cb => {
+                        if (cb !== this) cb.checked = false;
+                    });
+                } else if (isPittsburgh && this.checked) {
+                    // If "Pittsburgh" is checked, check all Pittsburgh locations
+                    PITTSBURGH_ZIPS.forEach(zip => {
+                        const cb = document.querySelector(`input[value="${zip}"]`);
+                        if (cb) cb.checked = true;
+                    });
+                    elements.allUS.checked = false;
+                } else if (!isAllUS && this.checked) {
+                    // If any other location is checked, uncheck "All US"
+                    elements.allUS.checked = false;
+                }
+
+                updateSelectedLocations();
+            });
+        });
+
+        async function searchProviders() {
+            const lastName = elements.lastName.value.trim().toLowerCase();
+            const selectedLocations = Array.from(document.querySelectorAll('input[name="location"]:checked'))
+                .map(cb => cb.value)
+                .filter(Boolean); // Remove empty string (All US)
+
+            // Validation: Either name or location must be provided
+            if (!lastName && selectedLocations.length === 0) {
+                showError('Please enter a name or select at least one location. Searching all of United States is not permitted.');
+                return;
+            }
+
+            showLoading(true);
+            resetResults();
+            showProgress(true);
+
+            try {
+                const matches = [];
+                let totalFiles = INDEX_FILES.length;
+                
+                for (let i = 0; i < totalFiles; i++) {
+                    const fileName = INDEX_FILES[i];
+                    elements.jsonProgress.textContent = `Reading index file ${i + 1} of ${totalFiles}: ${fileName}`;
+                    elements.jsonProgressBar.style.width = `${((i + 1) / totalFiles) * 100}%`;
+
+                    const response = await fetch(`${GITHUB_BASE_URL_INDEX}${fileName}`);
+                    if (!response.ok) continue;
+                    
+                    const indexData = await response.json();
+                    
+                    for (const [npi, data] of Object.entries(indexData)) {
+                        // Location matching logic
+                        let locationMatch = false;
+                        if (selectedLocations.length === 0) {
+                            locationMatch = true; // No locations selected = search all (only if name provided)
+                        } else if (selectedLocations.includes('pittsburgh')) {
+                            locationMatch = PITTSBURGH_ZIPS.includes(data.zip);
+                        } else {
+                            locationMatch = selectedLocations.includes(data.zip);
+                        }
+
+                        // Name matching logic (if name is provided)
+                        const nameMatch = !lastName || data.lastname.toLowerCase().includes(lastName);
+
+                        if (locationMatch && nameMatch) {
+                            matches.push({ npi, ...data });
+                        }
+                    }
+                }
+
+                if (matches.length === 0) {
+                    showError('No providers found matching your criteria');
+                } else {
+                    // Sort matches by last name
+                    matches.sort((a, b) => a.lastname.localeCompare(b.lastname));
+                    displayProviders(matches);
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showError('Error searching for providers');
+            } finally {
+                showLoading(false);
+                showProgress(false);
+            }
+        }
+
+        async function fetchProcedures(provider) {
+            showLoading(true);
+            elements.providersContainer.classList.add('hidden');
+            elements.providerDetails.classList.remove('hidden');
+            
+            // Show CSV progress indicators
+            elements.csvProgress.classList.remove('hidden');
+            elements.csvProgressContainer.classList.remove('hidden');
+            elements.progressIndicator.classList.remove('hidden');
+            
+            try {
+                const paddedChunk = provider.chunk.toString().padStart(3, '0');
+                const csvFile = `part_${paddedChunk}.csv`;
+                
+                elements.csvProgress.textContent = `Loading procedures from ${csvFile}`;
+                elements.csvProgressBar.style.width = '50%';
+                
+                const response = await fetch(`${GITHUB_BASE_URL_FILES}${csvFile}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch procedures data');
+                }
+
+                const text = await response.text();
+                elements.csvProgressBar.style.width = '75%';
+                elements.csvProgress.textContent = `Processing procedures from ${csvFile}`;
+                
+                Papa.parse(text, {
+                    header: true,
+                    complete: (results) => {
+                        const providerProcedures = results.data.filter(
+                            row => row.Rndrng_NPI === provider.npi
+                        );
+
+                        const groupedProcedures = _.chain(providerProcedures)
+                            .groupBy('HCPCS_Cd')
+                            .map((group, code) => ({
+                                code,
+                                description: group[0].HCPCS_Desc,
+                                services: _.sumBy(group, row => parseInt(row.Tot_Srvcs) || 0),
+                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_
