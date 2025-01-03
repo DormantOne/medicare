@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NPI Procedure Lookup</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 0 20px;
+    }
+    .container {
+      background-color: #f9f9f9;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .input-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .procedure-card {
+      background-color: white;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .procedure-details {
+      flex-grow: 1;
+    }
+    .procedure-stats {
+      text-align: right;
+      min-width: 200px;
+    }
+    .payment-amount {
+      font-size: 1.2em;
+      font-weight: bold;
+      color: #2c5282;
+    }
+    .service-count {
+      color: #666;
+      font-size: 0.9em;
+    }
+    .loading {
+      display: none;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #f0f0f0;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background-color: #4CAF50;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    .provider-info {
+      background-color: #e9ecef;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    /* Additional styles for name-based search display */
+    .search-options {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .provider-list {
+      display: none;
+      margin: 20px 0;
+    }
+    .provider-option {
+      background: white;
+      padding: 15px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    .provider-option:hover {
+      background-color: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>NPI Procedure Lookup</h1>
+
+    <!-- Search options -->
+    <div class="search-options">
+      <label>
+        <input type="radio" name="searchType" value="npi" checked /> Search by NPI
+      </label>
+      <label>
+        <input type="radio" name="searchType" value="name" /> Search by Name
+      </label>
+    </div>
+
+    <div class="input-group">
+      <label for="searchInput" id="searchLabel">Enter NPI Number</label>
+      <input type="text" id="searchInput" placeholder="Enter 10-digit NPI number" maxlength="10" />
+    </div>
+
+    <button id="lookupButton" onclick="lookupProvider()">Look Up Provider</button>
+
+    <div id="loading" class="loading">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-bar-fill"></div>
+      </div>
+      <div id="progress-text"></div>
+    </div>
+
+    <div id="providerList" class="provider-list"></div>
+    <div id="providerInfo" class="provider-info"></div>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    // ---------------- CONFIG -----------------
+    // The chunked CSV data is in a separate branch named "split_files"
+    // The index JSON is in the "main" branch
+    const GITHUB_BASE_URL_FILES = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
+    const GITHUB_BASE_URL_INDEX = 'https://raw.githubusercontent.com/DormantOne/medicare/main/';
+
+    // If your JSON only has single chunks, store them as an integer
+    // But if an NPI can span multiple chunks, store them as an array
+    // E.g. { "1003000134": { "name": "CIBULL, Thomas", "chunk": [1,5] } }
+    const indexFiles = [
+      'npi_index_1003000126-1194990077.json',
+      'npi_index_1194990135-1396971040.json',
+      'npi_index_1396971123-1598954208.json',
+      'npi_index_1598954224-1790975035.json',
+      'npi_index_1790975142-1992999874.json'
+    ];
+
+    // ---------------- DOM ELEMENTS -----------------
+    const searchInput    = document.getElementById('searchInput');
+    const searchLabel    = document.getElementById('searchLabel');
+    const providerList   = document.getElementById('providerList');
+    const lookupButton   = document.getElementById('lookupButton');
+    const loadingDiv     = document.getElementById('loading');
+    const progressFill   = document.getElementById('progress-fill');
+    const progressText   = document.getElementById('progress-text');
+    const providerInfoDiv= document.getElementById('providerInfo');
+    const resultsDiv     = document.getElementById('results');
+
+    // ---------------- EVENT LISTENERS -----------------
+    document.querySelectorAll('input[name="searchType"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        const isNPI = this.value === 'npi';
+        searchLabel.textContent = isNPI ? 'Enter NPI Number' : 'Enter Provider Name';
+        searchInput.placeholder = isNPI ? 'Enter 10-digit NPI number' : 'Enter provider name';
+        searchInput.value = '';
+        searchInput.maxLength = isNPI ? 10 : 50;
+        updateButtonState();
+      });
+    });
+
+    searchInput.addEventListener('input', function() {
+      const isNPI = document.querySelector('input[name="searchType"]:checked').value === 'npi';
+      if (isNPI) {
+        // keep only digits for NPI
+        this.value = this.value.replace(/\D/g, '');
+        lookupButton.disabled = !/^\d{10}$/.test(this.value);
+      } else {
+        // For name-based search, require at least 3 characters
+        lookupButton.disabled = this.value.trim().length < 3;
+      }
+    });
+
+    function updateButtonState() {
+      const isNPI = document.querySelector('input[name="searchType"]:checked').value === 'npi';
+      if (isNPI) {
+        lookupButton.disabled = !/^\d{10}$/.test(searchInput.value);
+      } else {
+        lookupButton.disabled = searchInput.value.trim().length < 3;
+      }
+    }
+
+    function resetUI() {
+      resultsDiv.innerHTML       = '';
+      providerInfoDiv.innerHTML  = '';
+      providerInfoDiv.style.display = 'none';
+      providerList.style.display = 'none';
+      loadingDiv.style.display   = 'block';
+      lookupButton.disabled      = true;
+      progressFill.style.width   = '0%';
+      progressText.textContent   = 'Searching...';
+    }
+
+    // ---------------- MAIN LOGIC -----------------
+    async function lookupProvider() {
+      resetUI();
+
+      const searchType  = document.querySelector('input[name="searchType"]:checked').value;
+      const searchValue = searchInput.value.trim();
+
+      if (searchType === 'npi') {
+        await lookupByNPIFromIndex(searchValue);
+      } else {
+        // Name-based search
+        const matches = await findProvidersByName(searchValue);
+        if (matches.length === 0) {
+          resultsDiv.innerHTML = `<p>No providers found matching "${searchValue}".</p>`;
+          loadingDiv.style.display = 'none';
+          lookupButton.disabled = false;
+        } else if (matches.length === 1) {
+          // If exactly 1 match, we have the NPI, so do the chunk-based fetch
+          await lookupByNPIFromIndex(matches[0].npi);
+        } else {
+          // Show multiple potential matches
+          loadingDiv.style.display = 'none';
+          lookupButton.disabled = false;
+          displayProviderOptions(matches);
+        }
+      }
+    }
+
+    // ---------------- NAME SEARCH -----------------
+    async function findProvidersByName(name) {
+      const nameUpper = name.toUpperCase();
+      const matches = [];
+
+      try {
+        for (const fileName of indexFiles) {
+          progressText.textContent = `Searching index file: ${fileName} ...`;
+          const indexUrl = GITHUB_BASE_URL_INDEX + fileName;
+          const indexResponse = await fetch(indexUrl);
+          if (!indexResponse.ok) continue;
+
+          const indexData = await indexResponse.json();
+          // indexData is { "1003000126": { "name": "...", "chunk": [1] }, ... }
+
+          for (const [npi, providerData] of Object.entries(indexData)) {
+            if (
+              providerData.name &&
+              providerData.name.toUpperCase().includes(nameUpper)
+            ) {
+              matches.push({ npi, ...providerData });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error searching by name:', error);
+      }
+
+      return matches;
+    }
+
+    function displayProviderOptions(providers) {
+      providerList.style.display = 'block';
+      providerList.innerHTML = '<h3>Select a Provider:</h3>';
+
+      providers.forEach(provider => {
+        const div = document.createElement('div');
+        div.className = 'provider-option';
+        div.innerHTML = `
+          <strong>${provider.name}</strong><br>
+          NPI: ${provider.npi}
+        `;
+        div.onclick = () => {
+          providerList.style.display = 'none';
+          lookupByNPIFromIndex(provider.npi);
+        };
+        providerList.appendChild(div);
+      });
+    }
+
+    // ---------------- NPI LOOKUP (FROM INDEX) -----------------
+    async function lookupByNPIFromIndex(npi) {
+      resetUI();
+
+      // 1) Find the chunk(s) for this NPI
+      const chunkNumbers = await findChunksForNPI(npi);
+      if (!chunkNumbers || chunkNumbers.length === 0) {
+        resultsDiv.innerHTML = `<p>No index entry found for NPI ${npi}.</p>`;
+        loadingDiv.style.display = 'none';
+        lookupButton.disabled = false;
+        return;
+      }
+
+      // 2) For each chunk, fetch that CSV file & parse
+      let allMatchedRows = [];
+      for (let i = 0; i < chunkNumbers.length; i++) {
+        const chunkNum = chunkNumbers[i];
+        const paddedChunk = chunkNum.toString().padStart(3, '0');
+        const csvFile = `part_${paddedChunk}.csv`;
+
+        progressText.textContent = `Fetching data from ${csvFile} (${i+1} of ${chunkNumbers.length})...`;
+        // Update progress bar
+        const progress = ((i+1) / chunkNumbers.length) * 100;
+        progressFill.style.width = progress + '%';
+
+        const matchedRows = await fetchAndProcessFile(csvFile, npi);
+        allMatchedRows = allMatchedRows.concat(matchedRows);
+      }
+
+      displayResults(allMatchedRows);
+      loadingDiv.style.display = 'none';
+      lookupButton.disabled = false;
+    }
+
+    // find chunk(s) for an NPI. Return an array (could be [1], or [1,5,17], etc.)
+    async function findChunksForNPI(npi) {
+      const foundChunks = [];
+      for (const fileName of indexFiles) {
+        const indexUrl = GITHUB_BASE_URL_INDEX + fileName;
+        try {
+          const resp = await fetch(indexUrl);
+          if (!resp.ok) continue;
+
+          const indexData = await resp.json();
+          if (indexData[npi]) {
+            // Could be a single integer or an array
+            let chunkValue = indexData[npi].chunk;
+            if (!Array.isArray(chunkValue)) {
+              // Convert single integer to array
+              chunkValue = [chunkValue];
+            }
+            foundChunks.push(...chunkValue);
+          }
+        } catch (err) {
+          console.error(`Error reading index file ${fileName}`, err);
+        }
+      }
+      return foundChunks;
+    }
+
+    // ---------------- FETCH & PARSE CSV -----------------
+    async function fetchAndProcessFile(filename, npi) {
+      const url = `${GITHUB_BASE_URL_FILES}${filename}`;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return [];
+
+        const text = await response.text();
+        return new Promise((resolve) => {
+          const matches = [];
+          Papa.parse(text, {
+            header: true,
+            worker: true,
+            step: function(row) {
+              if (row.data && row.data.Rndrng_NPI === npi) {
+                matches.push(row.data);
+              }
+            },
+            complete: function() {
+              resolve(matches);
+            }
+          });
+        });
+      } catch (error) {
+        console.error(`Error processing ${filename}:`, error);
+        return [];
+      }
+    }
+
+    // ---------------- DISPLAY RESULTS -----------------
+    function displayResults(rows) {
+      if (!rows || rows.length === 0) {
+        resultsDiv.innerHTML = '<p>No procedures found for this NPI.</p>';
+        return;
+      }
+
+      // Display provider info from the first row
+      const firstRow = rows[0];
+      providerInfoDiv.innerHTML = `
+        <h3>Provider Information</h3>
+        <p><strong>${firstRow.Rndrng_Prvdr_Last_Org_Name}, 
+                    ${firstRow.Rndrng_Prvdr_First_Name} 
+                    ${firstRow.Rndrng_Prvdr_MI || ''} 
+                    ${firstRow.Rndrng_Prvdr_Crdntls || ''}</strong><br>
+           ${firstRow.Rndrng_Prvdr_Type}<br>
+           ${firstRow.Rndrng_Prvdr_St1}<br>
+           ${firstRow.Rndrng_Prvdr_City}, 
+           ${firstRow.Rndrng_Prvdr_State_Abrvtn} 
+           ${firstRow.Rndrng_Prvdr_Zip5}
+        </p>
+      `;
+      providerInfoDiv.style.display = 'block';
+
+      // If you want to group procedures by HCPCS code and sum the services:
+      const procedures = {};
+      rows.forEach(row => {
+        const code = row.HCPCS_Cd;
+        if (!procedures[code]) {
+          procedures[code] = {
+            code: code,
+            description: row.HCPCS_Desc,
+            services: parseInt(row.Tot_Srvcs) || 0,
+            avgPayment: parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0
+          };
+        } else {
+          // Sum up services if same code appears in multiple lines/chunks
+          procedures[code].services += parseInt(row.Tot_Srvcs) || 0;
+
+          // For avgPayment, you might choose to keep the latest, or do an average.
+          // We'll keep the last seen for simplicity
+          procedures[code].avgPayment = parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0;
+        }
+      });
+
+      // If you still want them sorted by highest average payment, do so:
+      const sortedProcedures = Object.values(procedures).sort(
+        (a, b) => b.avgPayment - a.avgPayment
+      );
+
+      // Show ALL procedures (not just top 40)
+      resultsDiv.innerHTML = `
+        <h2>All Procedures for This Provider</h2>
+        <p><small>Sorted by average Medicare payment amount (descending)</small></p>
+      `;
+
+      sortedProcedures.forEach((proc, index) => {
+        const card = document.createElement('div');
+        card.className = 'procedure-card';
+        card.innerHTML = `
+          <div class="procedure-details">
+            <h3>${index + 1}. HCPCS ${proc.code}</h3>
+            <p>${proc.description}</p>
+          </div>
+          <div class="procedure-stats">
+            <div class="payment-amount">$${proc.avgPayment.toFixed(2)}</div>
+            <div class="service-count">${proc.services.toLocaleString()} services</div>
+          </div>
+        `;
+        resultsDiv.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
