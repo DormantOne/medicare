@@ -169,6 +169,34 @@
             allUS: document.getElementById('allUS')
         };
 
+        // Helper Functions
+        function showError(message) {
+            elements.errorMessage.textContent = message;
+            elements.errorMessage.classList.remove('hidden');
+            elements.searchButton.disabled = false;
+        }
+
+        function showLoading(show) {
+            elements.searchButton.disabled = show;
+            elements.loadingIndicator?.classList.toggle('hidden', !show);
+        }
+
+        function showProgress(show) {
+            elements.progressIndicator.classList.toggle('hidden', !show);
+            if (show) {
+                elements.jsonProgressBar.style.width = '0%';
+                elements.csvProgressBar.style.width = '0%';
+            }
+        }
+
+        function resetResults() {
+            elements.errorMessage.classList.add('hidden');
+            elements.providersContainer.classList.add('hidden');
+            elements.providerDetails.classList.add('hidden');
+            elements.providersList.innerHTML = '';
+            elements.proceduresList.innerHTML = '';
+        }
+
         function updateSelectedLocations() {
             const checkboxes = document.querySelectorAll('input[name="location"]:checked');
             const locations = Array.from(checkboxes).map(cb => LOCATION_MAP[cb.value]);
@@ -273,6 +301,29 @@
             }
         }
 
+        function displayProviders(providers) {
+            elements.providersContainer.classList.remove('hidden');
+            elements.providersList.innerHTML = `
+                <div class="mb-4 text-gray-600">
+                    Found ${providers.length} providers
+                </div>
+            ` + providers.map(provider => `
+                <div class="provider-card border rounded p-4 cursor-pointer hover:bg-gray-50" 
+                     onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'>
+                    <h3 class="font-medium">
+                        ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                    </h3>
+                    <p class="text-gray-600">
+                        ${provider.specialty}<br />
+                        ${provider.city}, ${provider.state} ${provider.zip}
+
+
+                        </p>
+                    <p class="text-gray-500 text-sm">NPI: ${provider.npi}</p>
+                </div>
+            `).join('');
+        }
+
         async function fetchProcedures(provider) {
             showLoading(true);
             elements.providersContainer.classList.add('hidden');
@@ -313,4 +364,86 @@
                                 code,
                                 description: group[0].HCPCS_Desc,
                                 services: _.sumBy(group, row => parseInt(row.Tot_Srvcs) || 0),
-                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_
+                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0)
+                            }))
+                            .orderBy(['avgPayment'], ['desc'])
+                            .value();
+
+                        elements.csvProgressBar.style.width = '100%';
+                        elements.csvProgress.textContent = 'Complete!';
+                        
+                        setTimeout(() => {
+                            elements.progressIndicator.classList.add('hidden');
+                            elements.csvProgress.classList.add('hidden');
+                            elements.csvProgressContainer.classList.add('hidden');
+                        }, 1000);
+
+                        displayProviderDetails(provider);
+                        displayProcedures(groupedProcedures);
+                        showLoading(false);
+                    },
+                    error: (error) => {
+                        console.error('CSV parsing error:', error);
+                        showError('Error processing provider data');
+                        showLoading(false);
+                    }
+                });
+            } catch (error) {
+                console.error('Procedure fetch error:', error);
+                showError('Error fetching provider procedures');
+                showLoading(false);
+            }
+        }
+
+        function displayProviderDetails(provider) {
+            elements.selectedProviderInfo.innerHTML = `
+                <h2 class="text-xl font-semibold mb-2">
+                    ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                </h2>
+                <p>
+                    ${provider.specialty}<br />
+                    ${provider.city}, ${provider.state} ${provider.zip}
+                </p>
+            `;
+        }
+
+        function displayProcedures(procedures) {
+            elements.proceduresList.innerHTML = procedures.length ? `
+                <h3 class="text-lg font-semibold mb-4">Procedures</h3>
+                ${procedures.map(procedure => `
+                    <div class="border rounded p-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h4 class="font-medium">${procedure.code}</h4>
+                                <p class="text-gray-600">${procedure.description}</p>
+                                <p class="text-sm text-gray-500">
+                                    ${procedure.services.toLocaleString()} services
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-lg font-bold text-blue-600">
+                                    $${procedure.avgPayment.toFixed(2)}
+                                </p>
+                                <p class="text-sm text-gray-500">avg. payment</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            ` : '<div class="text-center py-8">No procedures found</div>';
+        }
+
+        // Event Listeners
+        elements.searchButton.addEventListener('click', searchProviders);
+        elements.backButton.addEventListener('click', () => {
+            elements.providerDetails.classList.add('hidden');
+            elements.providersContainer.classList.remove('hidden');
+        });
+        elements.lastName.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchProviders();
+        });
+
+        // Initialize
+        updateSelectedLocations();
+    </script>
+</body>
+</html>
