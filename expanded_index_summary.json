@@ -1,12 +1,69 @@
 {
-  "npi_ranges": [
-    "1003000126-1194990077",
-    "1194990135-1396971040",
-    "1396971123-1598954208",
-    "1598954224-1790975035",
-    "1790975142-1992999874"
-  ],
+  "total_files": 12,
   "total_providers": 1148873,
   "total_shadyside": 393,
-  "generated_at": "2025-01-02 23:07:34.896415"
+  "generated_at": "2025-01-03 07:03:10.694696",
+  "target_size_mb": 22,
+  "files": [
+    {
+      "filename": "expanded_npi_index_01_1003000126-1093087314.json",
+      "size_mb": 22.01,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_02_1093087504-1184088171.json",
+      "size_mb": 22.09,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_03_1184088189-1275256612.json",
+      "size_mb": 22.09,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_04_1275257784-1366438699.json",
+      "size_mb": 22.08,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_05_1366438715-1457407470.json",
+      "size_mb": 22.08,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_06_1457407488-1548359466.json",
+      "size_mb": 22.08,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_07_1548359474-1639298656.json",
+      "size_mb": 22.09,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_08_1639298789-1720286552.json",
+      "size_mb": 22.09,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_09_1720286578-1811504210.json",
+      "size_mb": 22.1,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_10_1811504319-1902846207.json",
+      "size_mb": 22.19,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_11_1902846215-1992817613.json",
+      "size_mb": 22.18,
+      "records": 104199
+    },
+    {
+      "filename": "expanded_npi_index_12_1992817647-1992999874.json",
+      "size_mb": 0.57,
+      "records": 2684
+    }
+  ]
 }
