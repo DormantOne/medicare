@@ -172,7 +172,7 @@
 
     <script>
 
-      <script>
+        <script>
         // Constants and Configurations
         const GITHUB_BASE_URL_FILES = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
         const GITHUB_BASE_URL_INDEX = 'https://raw.githubusercontent.com/DormantOne/medicare/main/';
@@ -194,13 +194,9 @@
 
         // All Pittsburgh ZIP codes
         const PITTSBURGH_ALL_ZIPS = [
-            // Downtown and North Side
             '15222', '15212', '15214', '15233', '15237',
-            // East End
             '15206', '15224', '15232', '15213', '15217', '15221',
-            // South Side and Mount Washington
             '15203', '15210', '15211',
-            // Other Pittsburgh areas
             '15201', '15204', '15205', '15207', '15208', '15209',
             '15215', '15216', '15219', '15220', '15226', '15227',
             '15228', '15234', '15235', '15236', '15238', '15243'
@@ -312,6 +308,16 @@
             allSpecialties: document.getElementById('allSpecialties')
         };
 
+        // Initialize specialty checkboxes
+        function initializeSpecialtyCheckboxes() {
+            elements.specialtyCategories.innerHTML = Object.keys(SPECIALTY_CATEGORIES).map(category => `
+                <label class="flex items-center checkbox-label p-2">
+                    <input type="checkbox" name="specialty" value="${category}" class="mr-2">
+                    <span class="text-gray-700">${category}</span>
+                </label>
+            `).join('');
+        }
+
         // AI Query Generation
         function generateAIQuery(provider) {
             return `Please research the following healthcare provider:
@@ -363,16 +369,6 @@ Please note any limitations in the available information and specify the sources
             };
         }
 
-        // Initialize specialty checkboxes
-        function initializeSpecialtyCheckboxes() {
-            elements.specialtyCategories.innerHTML = Object.keys(SPECIALTY_CATEGORIES).map(category => `
-                <label class="flex items-center checkbox-label p-2">
-                    <input type="checkbox" name="specialty" value="${category}" class="mr-2">
-                    <span class="text-gray-700">${category}</span>
-                </label>
-            `).join('');
-        }
-
         // Helper Functions
         function showError(message) {
             elements.errorMessage.textContent = message;
@@ -421,7 +417,184 @@ Please note any limitations in the available information and specify the sources
             elements.selectedLocations.innerHTML = `${locationText}<br><br>${specialtyText}`;
         }
 
-        // Main search function
+        function displayProviders(providers) {
+            elements.providersContainer.classList.remove('hidden');
+            elements.providersList.innerHTML = `
+                <div class="mb-4 text-gray-600">
+                    Found ${providers.length} providers
+                </div>
+            ` + providers.map(provider => {
+                const aiQuery = generateAIQuery(provider);
+                const aiLinks = generateAIPlatformLinks(aiQuery);
+                
+                return `
+                    <div class="provider-card border rounded-lg p-4 mb-4 bg-white">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex-grow">
+                                <h3 class="font-medium text-lg">
+                                    ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                                </h3>
+                                <p class="text-gray-600">
+                                    ${provider.specialty || 'Specialty not listed'}<br />
+                                    ${provider.city}, ${provider.state} ${provider.zip}
+                                </p>
+                                <p class="text-gray-500 text-sm">NPI: ${provider.npi}</p>
+                            </div>
+                            
+                            <div class="flex flex-col space-y-2 ml-4">
+                                <button 
+                                    onclick="copyToClipboard(${JSON.stringify(aiQuery)}, this)"
+                                    class="ai-button bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600"
+                                >
+                                    Copy AI Query
+                                </button>
+                                
+                                <div class="ai-links flex flex-col space-y-1">
+                                    <a href="${aiLinks.perplexity}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm">
+                                       → Perplexity
+                                    </a>
+                                    <a href="${aiLinks.copilot}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm">
+                                       → Copilot
+                                    </a>
+                                    <a href="${aiLinks.chatgpt}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm">
+                                       → ChatGPT
+                                    </a>
+                                    <a href="${aiLinks.gemini}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm">
+                                       → Gemini
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="pt-2 border-t">
+                            <button 
+                                onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'
+                                class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                            >
+                                View Medicare Procedures →
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function fetchProcedures(provider) {
+            showLoading(true);
+            elements.providersContainer.classList.add('hidden');
+            elements.providerDetails.classList.remove('hidden');
+            
+            elements.csvProgress.classList.remove('hidden');
+            elements.csvProgressContainer.classList.remove('hidden');
+            elements.progressIndicator.classList.remove('hidden');
+            
+            try {
+                const paddedChunk = provider.chunk.toString().padStart(3, '0');
+                const csvFile = `part_${paddedChunk}.csv`;
+                
+                elements.csvProgress.textContent = `Loading procedures from ${csvFile}`;
+                elements.csvProgressBar.style.width = '50%';
+                
+                const response = await fetch(`${GITHUB_BASE_URL_FILES}${csvFile}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch procedures data');
+                }
+
+                const text = await response.text();
+                elements.csvProgressBar.style.width = '75%';
+                elements.csvProgress.textContent = `Processing procedures from ${csvFile}`;
+                
+                Papa.parse(text, {
+                    header: true,
+                    complete: (results) => {
+                        const providerProcedures = results.data.filter(
+                            row => row.Rndrng_NPI === provider.npi
+                        );
+
+                        const groupedProcedures = _.chain(providerProcedures)
+                            .groupBy('HCPCS_Cd')
+                            .map((group, code) => ({
+                                code,
+                                description: group[0].HCPCS_Desc,
+                                services: _.sumBy(group, row => parseInt(row.Tot_Srvcs) || 0),
+                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0)
+                            }))
+                            .orderBy(['avgPayment'], ['desc'])
+                            .value();
+
+                        elements.csvProgressBar.style.width = '100%';
+                        elements.csvProgress.textContent = 'Complete!';
+
+                    setTimeout(() => {
+                            elements.progressIndicator.classList.add('hidden');
+                            elements.csvProgress.classList.add('hidden');
+                            elements.csvProgressContainer.classList.add('hidden');
+                        }, 1000);
+
+                        displayProviderDetails(provider);
+                        displayProcedures(groupedProcedures);
+                        showLoading(false);
+                    },
+                    error: (error) => {
+                        console.error('CSV parsing error:', error);
+                        showError('Error processing provider data');
+                        showLoading(false);
+                    }
+                });
+            } catch (error) {
+                console.error('Procedure fetch error:', error);
+                showError('Error fetching provider procedures');
+                showLoading(false);
+            }
+        }
+
+        function displayProviderDetails(provider) {
+            elements.selectedProviderInfo.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-xl font-semibold mb-2">
+                            ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                        </h2>
+                        <p class="text-gray-600">
+                            ${provider.specialty || 'Specialty not listed'}<br />
+                            ${provider.city}, ${provider.state} ${provider.zip}
+                        </p>
+                        <p class="text-gray-500 text-sm mt-1">NPI: ${provider.npi}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayProcedures(procedures) {
+            elements.proceduresList.innerHTML = procedures.length ? `
+                <h3 class="text-lg font-semibold mb-4">Medicare Procedures</h3>
+                ${procedures.map(procedure => `
+                    <div class="border rounded-lg p-4 bg-white">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-grow">
+                                <h4 class="font-medium text-blue-600">${procedure.code}</h4>
+                                <p class="text-gray-600 mt-1">${procedure.description}</p>
+                                <p class="text-sm text-gray-500 mt-2">
+                                    ${procedure.services.toLocaleString()} services performed
+                                </p>
+                            </div>
+                            <div class="text-right ml-4">
+                                <p class="text-lg font-bold text-green-600">
+                                    $${procedure.avgPayment.toFixed(2)}
+                                </p>
+                                <p class="text-sm text-gray-500">average Medicare payment</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            ` : '<div class="text-center py-8 text-gray-500">No Medicare procedures found for this provider</div>';
+        }
+
         async function searchProviders() {
             const lastName = elements.lastName.value.trim().toLowerCase();
             const selectedLocations = Array.from(document.querySelectorAll('input[name="location"]:checked'))
@@ -496,206 +669,6 @@ Please note any limitations in the available information and specify the sources
                 showLoading(false);
                 showProgress(false);
             }
-        }
-
-        // Display Functions
-        function displayProviders(providers) {
-            elements.providersContainer.classList.remove('hidden');
-            elements.providersList.innerHTML = `
-                <div class="mb-4 text-gray-600">
-                    Found ${providers.length} providers
-                </div>
-            ` + providers.map(provider => {
-                const aiQuery = generateAIQuery(provider);
-                const aiLinks = generateAIPlatformLinks(aiQuery);
-                
-                return `
-                    <div class="provider-card border rounded-lg p-4 mb-4 bg-white">
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="cursor-pointer flex-grow" onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'>
-                                <h3 class="font-medium text-lg">
-                                    ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
-                                </h3>
-                                <p class="text-gray-600">
-                                    ${provider.specialty || 'Specialty not listed'}<br />
-                                    ${provider.city}, ${provider.state} ${provider.zip}
-                                </p>
-                                <p class="text-gray-500 text-sm">NPI: ${provider.npi}</p>
-                            </div>
-                            
-                            <div class="flex flex-col space-y-2 ml-4">
-                               <button 
-    onclick="copyToClipboard(${JSON.stringify(aiQuery)}, this)"
-    class="ai-button bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600 
-           transition-all flex items-center justify-center"
->
-    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-              d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2"/>
-    </svg>
-    Copy AI Query
-</button>
-                                
-                                <div class="ai-links flex flex-col space-y-1">
-                                    <a href="${aiLinks.perplexity}" target="_blank" 
-                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
-                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                                        </svg>
-                                        Perplexity
-                                    </a>
-                                    <a href="${aiLinks.copilot}" target="_blank" 
-                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
-                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                        </svg>
-                                        Copilot
-                                    </a>
-                                    <a href="${aiLinks.chatgpt}" target="_blank" 
-                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
-                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-                                        </svg>
-                                        ChatGPT
-                                    </a>
-                                    <a href="${aiLinks.gemini}" target="_blank" 
-                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
-                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                        </svg>
-                                        Gemini
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="flex justify-between items-center pt-2 border-t">
-                            <button 
-                                onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'
-                                class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
-                            >
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                          d="M9 5l7 7-7 7"/>
-                                </svg>
-                                View Medicare Procedures
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function fetchProcedures(provider) {
-            showLoading(true);
-            elements.providersContainer.classList.add('hidden');
-            elements.providerDetails.classList.remove('hidden');
-            
-            elements.csvProgress.classList.remove('hidden');
-            elements.csvProgressContainer.classList.remove('hidden');
-            elements.progressIndicator.classList.remove('hidden');
-            
-            try {
-                const paddedChunk = provider.chunk.toString().padStart(3, '0');
-                const csvFile = `part_${paddedChunk}.csv`;
-                
-                elements.csvProgress.textContent = `Loading procedures from ${csvFile}`;
-                elements.csvProgressBar.style.width = '50%';
-                
-                const response = await fetch(`${GITHUB_BASE_URL_FILES}${csvFile}`);
-                
-                if (!response.ok) {
-                    throw new Error('Failed to fetch procedures data');
-                }
-
-                const text = await response.text();
-                elements.csvProgressBar.style.width = '75%';
-                elements.csvProgress.textContent = `Processing procedures from ${csvFile}`;
-                
-                Papa.parse(text, {
-                    header: true,
-                    complete: (results) => {
-                        const providerProcedures = results.data.filter(
-                            row => row.Rndrng_NPI === provider.npi
-                        );
-
-                        const groupedProcedures = _.chain(providerProcedures)
-                            .groupBy('HCPCS_Cd')
-                            .map((group, code) => ({
-                                code,
-                                description: group[0].HCPCS_Desc,
-                                services: _.sumBy(group, row => parseInt(row.Tot_Srvcs) || 0),
-                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0)
-                            }))
-                            .orderBy(['avgPayment'], ['desc'])
-                            .value();
-
-                        elements.csvProgressBar.style.width = '100%';
-                        elements.csvProgress.textContent = 'Complete!';
-                        
-                        setTimeout(() => {
-                            elements.progressIndicator.classList.add('hidden');
-                            elements.csvProgress.classList.add('hidden');
-                            elements.csvProgressContainer.classList.add('hidden');
-                        }, 1000);
-
-                        displayProviderDetails(provider);
-                        displayProcedures(groupedProcedures);
-                        showLoading(false);
-                    },
-                    error: (error) => {
-                        console.error('CSV parsing error:', error);
-                        showError('Error processing provider data');
-                        showLoading(false);
-                    }
-                });
-            } catch (error) {
-                console.error('Procedure fetch error:', error);
-                showError('Error fetching provider procedures');
-                showLoading(false);
-            }
-        }
-
-        function displayProviderDetails(provider) {
-            elements.selectedProviderInfo.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h2 class="text-xl font-semibold mb-2">
-                            ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
-                        </h2>
-                        <p class="text-gray-600">
-                            ${provider.specialty || 'Specialty not listed'}<br />
-                            ${provider.city}, ${provider.state} ${provider.zip}
-                        </p>
-                        <p class="text-gray-500 text-sm mt-1">NPI: ${provider.npi}</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        function displayProcedures(procedures) {
-            elements.proceduresList.innerHTML = procedures.length ? `
-                <h3 class="text-lg font-semibold mb-4">Medicare Procedures</h3>
-                ${procedures.map(procedure => `
-                    <div class="border rounded-lg p-4 bg-white">
-                        <div class="flex justify-between items-start">
-                            <div class="flex-grow">
-                                <h4 class="font-medium text-blue-600">${procedure.code}</h4>
-                                <p class="text-gray-600 mt-1">${procedure.description}</p>
-                                <p class="text-sm text-gray-500 mt-2">
-                                    ${procedure.services.toLocaleString()} services performed
-                                </p>
-                            </div>
-                            <div class="text-right ml-4">
-                                <p class="text-lg font-bold text-green-600">
-                                    $${procedure.avgPayment.toFixed(2)}
-                                </p>
-                                <p class="text-sm text-gray-500">average Medicare payment</p>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
-            ` : '<div class="text-center py-8 text-gray-500">No Medicare procedures found for this provider</div>';
         }
 
         // Initialize checkbox handlers
