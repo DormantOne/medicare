@@ -41,6 +41,7 @@
                     <ul class="list-disc pl-5 space-y-1">
                         <li>Medicare data is from 2022 and earlier</li>
                         <li>Data excludes services billed under institutional NPI numbers</li>
+                        <li>Hospital selections represent practice address NOT associated hospitals - expand search to other hospitals or all pittsburgh</li>
                         <li>AI-generated reports may be incomplete or outdated</li>
                         <li>This tool should be used as a starting point for research only</li>
                     </ul>
@@ -88,6 +89,10 @@
                         <label class="flex items-center pl-6 checkbox-label p-2">
                             <input type="checkbox" name="location" value="15237" class="mr-2">
                             Passavant Hospital (15237)
+                        </label>
+                        <label class="flex items-center pl-6 checkbox-label p-2">
+                            <input type="checkbox" name="location" value="15146" class="mr-2">
+                            East (15146)
                         </label>
                     </div>
                 </div>
@@ -251,13 +256,67 @@
             '15213': 'Magee/Presbyterian (15213)',
             '15219': 'Mercy Hospital (15219)',
             '15132': 'McKeesport Hospital (15132)',
-            '15237': 'Passavant Hospital (15237)'
+            '15237': 'Passavant Hospital (15237)',
+            '15146': 'East (15146)'  // Add this line
         };
 
        
 
-        const PITTSBURGH_ZIPS = ['15106', '15120', '15201', '15132','15203', '15204', '15205', '15206', '15207', '15208', '15209', '15210', '15211', '15212', '15213', '15214', '15215', '15216', '15217', '15218', '15219', '15220', '15221', '15222', '15223', '15224', '15225', '15226', '15227', '15228', '15229', '15232', '15233', '15234', '15235', '15236', '15237', '15238', '15239', '15241', '15243', '15260', '15290'];
+        const PITTSBURGH_ZIPS = [
+            // ALL CITY OF PITTSBURGH
+            '15201', // Lawrenceville & Stanton Heights
+            '15203', // Southside
+            '15206', // East Liberty, Morningside & East End (small part Penn Hills)
+            '15207', // Hazelwood, Greenfield, etc.
+            '15208', // Homewood, Brushton, etc. (small part Penn Hills)
+            '15211', // Mt Washington & Duquesne Heights
+            '15213', // Oakland & Bellefield
+            '15217', // Squirrel Hill, Greenfield & Browns Hill
+            '15219', // Uptown, Herron Hill & Schenley Heights
+            '15222', // Downtown
+            '15224', // Bloomfield & Garfield
+            '15230', // Downtown Businesses
+            '15232', // Shadyside & East End
+            '15233', // Manchester & Northside
+            '15260', // University of Pittsburgh
+            '15282', // Duquesne University
 
+            // PARTIAL CITY
+            '15204', // Sheraden, Elliott, etc.
+            '15205', // Crafton Heights
+            '15210', // Knoxville, Beltzhoover, etc.
+            '15212', // Northside
+            '15214', // Northside
+            '15215', // Sharpsburg area
+            '15216', // Beechview
+            '15218', // Regent Square & Swisshelm Park
+            '15220', // West End, Wabash, etc.
+            '15221', // Brushton, Homewood & East Hills
+            '15226', // Brookline & Overbrook
+            '15227', // Carrick & Overbrook
+            '15234', // Overbrook
+            '15235', // Small part City of Pittsburgh
+
+            // NOT CITY BUT GREATER PITTSBURGH AREA
+            '15202', // Bellevue, Avalon, etc.
+            '15209', // Millvale, Shaler, etc.
+            '15223', // Etna and Shaler
+            '15225', // Neville Township
+            '15228', // Bethel Park area
+            '15229', // West View
+            '15231', // Greater Pittsburgh Airport
+            '15236', // Pleasant Hills, etc.
+            '15237', // Franklin Park, Ross & McCandless
+            '15238', // Blawnox & Fox Chapel
+            '15239', // Plum
+            '15241', // Upper St Clair
+            '15242', // Greentree
+            '15243', // Mt Lebanon area
+
+            // HOSPITALS/MEDICAL CENTERS
+            '15132', // McKeesport Hospital
+            '15146'  // UPMC East
+        ];
         // DOM Elements
         const elements = {
             lastName: document.getElementById('lastName'),
