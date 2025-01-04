@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthcare Provider Search with AI Assistant</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .provider-card {
+            transition: all 0.3s ease;
+        }
+        .provider-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .checkbox-label {
+            transition: background-color 0.2s ease;
+            border-radius: 4px;
+        }
+        .checkbox-label:hover {
+            background-color: #f3f4f6;
+        }
+        .ai-button {
+            transition: all 0.2s ease;
+        }
+        .ai-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .ai-links a {
+            transition: all 0.2s ease;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .ai-links a:hover {
+            background-color: #f3f4f6;
+            transform: translateX(2px);
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        .copied-animation {
+            animation: copiedFade 2s ease;
+        }
+        @keyframes copiedFade {
+            0%, 50% { background-color: #10B981; }
+            100% { background-color: #3B82F6; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="max-w-4xl mx-auto p-4">
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-2">Healthcare Provider Search</h1>
+            <p class="text-gray-600 mb-6">Search for providers by name, location, or specialty with AI-powered research assistance</p>
+            
+            <!-- Search Form -->
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Provider Last Name</label>
+                    <input
+                        type="text"
+                        id="lastName"
+                        class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                        placeholder="Enter name, or select location(s) to see all providers there"
+                    >
+                </div>
+                
+                <!-- Locations Section -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium mb-2">Locations</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center checkbox-label p-2">
+                            <input type="checkbox" name="location" value="" class="mr-2" id="allUS">
+                            <span class="text-gray-700">All United States</span>
+                        </label>
+                        <label class="flex items-center checkbox-label p-2">
+                            <input type="checkbox" name="location" value="pittsburgh" class="mr-2">
+                            <span class="text-gray-700">Pittsburgh (All Areas)</span>
+                        </label>
+                        <div class="ml-6 space-y-2">
+                            <div class="text-sm text-gray-500 mb-2">Major Hospitals:</div>
+                            <label class="flex items-center checkbox-label p-2">
+                                <input type="checkbox" name="location" value="15232" class="mr-2">
+                                <span class="text-gray-700">Shadyside Hospital (15232)</span>
+                            </label>
+                            <label class="flex items-center checkbox-label p-2">
+                                <input type="checkbox" name="location" value="15213" class="mr-2">
+                                <span class="text-gray-700">UPMC Presbyterian (15213)</span>
+                            </label>
+                            <label class="flex items-center checkbox-label p-2">
+                                <input type="checkbox" name="location" value="15219" class="mr-2">
+                                <span class="text-gray-700">Mercy Hospital (15219)</span>
+                            </label>
+                            <label class="flex items-center checkbox-label p-2">
+                                <input type="checkbox" name="location" value="15132" class="mr-2">
+                                <span class="text-gray-700">McKeesport Hospital (15132)</span>
+                            </label>
+                            <label class="flex items-center checkbox-label p-2">
+                                <input type="checkbox" name="location" value="15237" class="mr-2">
+                                <span class="text-gray-700">Passavant Hospital (15237)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Specialties Section -->
+                <div class="space-y-2 mt-6">
+                    <label class="block text-sm font-medium mb-2">Specialties</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center checkbox-label p-2">
+                            <input type="checkbox" name="specialty" value="all" class="mr-2" id="allSpecialties">
+                            <span class="text-gray-700">All Specialties</span>
+                        </label>
+                        <div id="specialtyCategories" class="space-y-1">
+                            <!-- Specialty checkboxes will be inserted here by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 mt-4">
+                    <div class="text-sm font-medium mb-2">Selected Filters:</div>
+                    <div id="selectedLocations" class="text-sm text-gray-600"></div>
+                </div>
+                
+                <button
+                    id="searchButton"
+                    class="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 
+                           disabled:cursor-not-allowed transition-colors duration-200 shadow-sm hover:shadow-md"
+                >
+                    Search Providers
+                </button>
+            </div>
+
+            <!-- Progress Indicators -->
+            <div id="progressIndicator" class="hidden space-y-2 mb-4">
+                <div class="text-sm font-medium">Search Progress:</div>
+                <div id="jsonProgress" class="text-sm text-gray-600"></div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                    <div id="jsonProgressBar" class="bg-blue-600 h-2.5 rounded-full progress-bar" style="width: 0%"></div>
+                </div>
+                <div id="csvProgress" class="text-sm text-gray-600 hidden"></div>
+                <div id="csvProgressContainer" class="w-full bg-gray-200 rounded-full h-2.5 mb-4 hidden">
+                    <div id="csvProgressBar" class="bg-green-600 h-2.5 rounded-full progress-bar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="hidden text-red-500 mb-4 p-4 bg-red-50 rounded-lg border border-red-200"></div>
+
+            <!-- Results Container -->
+            <div id="providersContainer" class="hidden">
+                <h2 class="text-xl font-semibold mb-4">Found Providers</h2>
+                <div id="providersList" class="space-y-4"></div>
+            </div>
+
+            <!-- Provider Details -->
+            <div id="providerDetails" class="hidden">
+                <button id="backButton" class="mb-4 text-blue-500 hover:text-blue-600 flex items-center">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to provider list
+                </button>
+                <div id="selectedProviderInfo" class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200"></div>
+                <div id="proceduresList" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+
+      <script>
+        // Constants and Configurations
+        const GITHUB_BASE_URL_FILES = 'https://raw.githubusercontent.com/DormantOne/medicare/split_files/';
+        const GITHUB_BASE_URL_INDEX = 'https://raw.githubusercontent.com/DormantOne/medicare/main/';
+
+        const INDEX_FILES = [
+            'expanded_npi_index_01_1003000126-1093087314.json',
+            'expanded_npi_index_02_1093087504-1184088171.json',
+            'expanded_npi_index_03_1184088189-1275256612.json',
+            'expanded_npi_index_04_1275257784-1366438699.json',
+            'expanded_npi_index_05_1366438715-1457407470.json',
+            'expanded_npi_index_06_1457407488-1548359466.json',
+            'expanded_npi_index_07_1548359474-1639298656.json',
+            'expanded_npi_index_08_1639298789-1720286552.json',
+            'expanded_npi_index_09_1720286578-1811504210.json',
+            'expanded_npi_index_10_1811504319-1902846207.json',
+            'expanded_npi_index_11_1902846215-1992817613.json',
+            'expanded_npi_index_12_1992817647-1992999874.json'
+        ];
+
+        // All Pittsburgh ZIP codes
+        const PITTSBURGH_ALL_ZIPS = [
+            // Downtown and North Side
+            '15222', '15212', '15214', '15233', '15237',
+            // East End
+            '15206', '15224', '15232', '15213', '15217', '15221',
+            // South Side and Mount Washington
+            '15203', '15210', '15211',
+            // Other Pittsburgh areas
+            '15201', '15204', '15205', '15207', '15208', '15209',
+            '15215', '15216', '15219', '15220', '15226', '15227',
+            '15228', '15234', '15235', '15236', '15238', '15243'
+        ];
+
+        const LOCATION_MAP = {
+            '': 'All United States',
+            'pittsburgh': 'Pittsburgh (All Areas)',
+            '15232': 'Shadyside Hospital (15232)',
+            '15213': 'UPMC Presbyterian (15213)',
+            '15219': 'Mercy Hospital (15219)',
+            '15132': 'McKeesport Hospital (15132)',
+            '15237': 'Passavant Hospital (15237)'
+        };
+
+        const SPECIALTY_CATEGORIES = {
+            'Primary Care': [
+                'Family Practice',
+                'General Practice',
+                'Internal Medicine',
+                'Pediatric Medicine',
+                'Preventive Medicine',
+                'Geriatric Medicine'
+            ],
+            'Surgical Specialties': [
+                'General Surgery',
+                'Cardiac Surgery',
+                'Colorectal Surgery',
+                'Hand Surgery',
+                'Neurosurgery',
+                'Orthopedic Surgery',
+                'Plastic and Reconstructive Surgery',
+                'Thoracic Surgery',
+                'Vascular Surgery',
+                'Surgical Oncology'
+            ],
+            'Internal Medicine Subspecialties': [
+                'Cardiology',
+                'Endocrinology',
+                'Gastroenterology',
+                'Hematology',
+                'Infectious Disease',
+                'Nephrology',
+                'Pulmonary Disease',
+                'Rheumatology'
+            ],
+            'Oncology Care': [
+                'Medical Oncology',
+                'Hematology-Oncology',
+                'Radiation Oncology',
+                'Gynecological Oncology'
+            ],
+            'Neurology & Mental Health': [
+                'Neurology',
+                'Psychiatry',
+                'Neuropsychiatry',
+                'Geriatric Psychiatry',
+                'Psychologist, Clinical'
+            ],
+            "Women's Health": [
+                'Obstetrics & Gynecology',
+                'Certified Nurse Midwife'
+            ],
+            'Diagnostic & Imaging': [
+                'Diagnostic Radiology',
+                'Nuclear Medicine',
+                'Pathology',
+                'Interventional Radiology'
+            ],
+            'Emergency & Critical Care': [
+                'Emergency Medicine',
+                'Critical Care (Intensivists)',
+                'Hospitalist'
+            ],
+            'Pain & Rehabilitation': [
+                'Pain Management',
+                'Interventional Pain Management',
+                'Physical Medicine and Rehabilitation',
+                'Anesthesiology'
+            ],
+            'Advanced Practice': [
+                'Nurse Practitioner',
+                'Physician Assistant',
+                'Certified Clinical Nurse Specialist',
+                'Certified Registered Nurse Anesthetist (CRNA)'
+            ]
+        };
+
+        // DOM Elements
+        const elements = {
+            lastName: document.getElementById('lastName'),
+            searchButton: document.getElementById('searchButton'),
+            progressIndicator: document.getElementById('progressIndicator'),
+            jsonProgress: document.getElementById('jsonProgress'),
+            jsonProgressBar: document.getElementById('jsonProgressBar'),
+            csvProgress: document.getElementById('csvProgress'),
+            csvProgressContainer: document.getElementById('csvProgressContainer'),
+            csvProgressBar: document.getElementById('csvProgressBar'),
+            errorMessage: document.getElementById('errorMessage'),
+            providersContainer: document.getElementById('providersContainer'),
+            providersList: document.getElementById('providersList'),
+            providerDetails: document.getElementById('providerDetails'),
+            selectedProviderInfo: document.getElementById('selectedProviderInfo'),
+            proceduresList: document.getElementById('proceduresList'),
+            backButton: document.getElementById('backButton'),
+            selectedLocations: document.getElementById('selectedLocations'),
+            allUS: document.getElementById('allUS'),
+            specialtyCategories: document.getElementById('specialtyCategories'),
+            allSpecialties: document.getElementById('allSpecialties')
+        };
+
+        // AI Query Generation
+        function generateAIQuery(provider) {
+            return `Please research the following healthcare provider:
+
+Name: ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+Address: ${provider.city}, ${provider.state} ${provider.zip}
+NPI: ${provider.npi}
+Specialty: ${provider.specialty || 'Not specified'}
+
+Please provide information about:
+1. Their top 1-3 areas of interest and/or research focus
+2. Their top 1-5 most common or notable procedures/treatments
+3. Patient ratings and reviews
+4. Languages spoken
+5. Any concerns, complaints, or legal actions
+6. Major hospital affiliations and practice locations
+7. Board certifications and educational background
+
+Please note any limitations in the available information and specify the sources used.`;
+        }
+
+        // Clipboard functionality
+        function copyToClipboard(text, buttonElement) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = buttonElement.textContent;
+                const originalClasses = buttonElement.className;
+                
+                buttonElement.textContent = 'Copied!';
+                buttonElement.classList.add('copied-animation');
+                
+                setTimeout(() => {
+                    buttonElement.textContent = originalText;
+                    buttonElement.className = originalClasses;
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                buttonElement.textContent = 'Failed to copy';
+            });
+        }
+
+        // Generate AI platform links
+        function generateAIPlatformLinks(query) {
+            const encodedQuery = encodeURIComponent(query);
+            return {
+                perplexity: `https://www.perplexity.ai/?q=${encodedQuery}`,
+                copilot: `https://copilot.microsoft.com/`,
+                chatgpt: `https://chat.openai.com/`,
+                gemini: `https://gemini.google.com/`
+            };
+        }
+
+        // Initialize specialty checkboxes
+        function initializeSpecialtyCheckboxes() {
+            elements.specialtyCategories.innerHTML = Object.keys(SPECIALTY_CATEGORIES).map(category => `
+                <label class="flex items-center checkbox-label p-2">
+                    <input type="checkbox" name="specialty" value="${category}" class="mr-2">
+                    <span class="text-gray-700">${category}</span>
+                </label>
+            `).join('');
+        }
+
+        // Helper Functions
+        function showError(message) {
+            elements.errorMessage.textContent = message;
+            elements.errorMessage.classList.remove('hidden');
+            elements.searchButton.disabled = false;
+        }
+
+        function showLoading(show) {
+            elements.searchButton.disabled = show;
+            if (elements.loadingIndicator) {
+                elements.loadingIndicator.classList.toggle('hidden', !show);
+            }
+        }
+
+        function showProgress(show) {
+            elements.progressIndicator.classList.toggle('hidden', !show);
+            if (show) {
+                elements.jsonProgressBar.style.width = '0%';
+                elements.csvProgressBar.style.width = '0%';
+            }
+        }
+
+        function resetResults() {
+            elements.errorMessage.classList.add('hidden');
+            elements.providersContainer.classList.add('hidden');
+            elements.providerDetails.classList.add('hidden');
+            elements.providersList.innerHTML = '';
+            elements.proceduresList.innerHTML = '';
+        }
+
+        function updateSelectedFilters() {
+            const locationCheckboxes = document.querySelectorAll('input[name="location"]:checked');
+            const specialtyCheckboxes = document.querySelectorAll('input[name="specialty"]:checked');
+            
+            const locations = Array.from(locationCheckboxes).map(cb => LOCATION_MAP[cb.value]);
+            const specialties = Array.from(specialtyCheckboxes).map(cb => cb.value === 'all' ? 'All Specialties' : cb.value);
+            
+            const locationText = locations.length === 0 
+                ? 'No locations selected - please select at least one location or enter a name'
+                : `Locations: ${locations.join(', ')}`;
+                
+            const specialtyText = specialties.length === 0
+                ? 'No specialties selected (will include all)'
+                : `Specialties: ${specialties.join(', ')}`;
+                
+            elements.selectedLocations.innerHTML = `${locationText}<br><br>${specialtyText}`;
+        }
+
+        // Main search function
+        async function searchProviders() {
+            const lastName = elements.lastName.value.trim().toLowerCase();
+            const selectedLocations = Array.from(document.querySelectorAll('input[name="location"]:checked'))
+                .map(cb => cb.value)
+                .filter(Boolean);
+
+            if (!lastName && selectedLocations.length === 0) {
+                showError('Please enter a name or select at least one location. Searching all of United States is not permitted.');
+                return;
+            }
+
+            showLoading(true);
+            resetResults();
+            showProgress(true);
+
+            try {
+                const matches = [];
+                const totalFiles = INDEX_FILES.length;
+                
+                for (let i = 0; i < totalFiles; i++) {
+                    const fileName = INDEX_FILES[i];
+                    elements.jsonProgress.textContent = `Reading index file ${i + 1} of ${totalFiles}: ${fileName}`;
+                    elements.jsonProgressBar.style.width = `${((i + 1) / totalFiles) * 100}%`;
+
+                    const response = await fetch(`${GITHUB_BASE_URL_INDEX}${fileName}`);
+                    if (!response.ok) continue;
+                    
+                    const indexData = await response.json();
+                    
+                    for (const [npi, data] of Object.entries(indexData)) {
+                        // Location matching
+                        let locationMatch = false;
+                        if (selectedLocations.length === 0) {
+                            locationMatch = true;
+                        } else if (selectedLocations.includes('pittsburgh')) {
+                            locationMatch = PITTSBURGH_ALL_ZIPS.includes(data.zip);
+                        } else {
+                            locationMatch = selectedLocations.includes(data.zip);
+                        }
+
+                        // Name matching
+                        const nameMatch = !lastName || data.lastname.toLowerCase().includes(lastName);
+                        
+                        // Specialty matching
+                        const selectedSpecialties = Array.from(document.querySelectorAll('input[name="specialty"]:checked'))
+                            .map(cb => cb.value);
+                            
+                        let specialtyMatch = true;
+                        if (selectedSpecialties.length > 0 && !selectedSpecialties.includes('all')) {
+                            const providerSpecialty = data.specialty || '';
+                            specialtyMatch = selectedSpecialties.some(category => 
+                                SPECIALTY_CATEGORIES[category]?.includes(providerSpecialty)
+                            );
+                        }
+
+                        if (locationMatch && nameMatch && specialtyMatch) {
+                            matches.push({ npi, ...data });
+                        }
+                    }
+                }
+
+                if (matches.length === 0) {
+                    showError('No providers found matching your criteria');
+                } else {
+                    matches.sort((a, b) => a.lastname.localeCompare(b.lastname));
+                    displayProviders(matches);
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showError('Error searching for providers');
+            } finally {
+                showLoading(false);
+                showProgress(false);
+            }
+        }
+
+        // Display Functions
+        function displayProviders(providers) {
+            elements.providersContainer.classList.remove('hidden');
+            elements.providersList.innerHTML = `
+                <div class="mb-4 text-gray-600">
+                    Found ${providers.length} providers
+                </div>
+            ` + providers.map(provider => {
+                const aiQuery = generateAIQuery(provider);
+                const aiLinks = generateAIPlatformLinks(aiQuery);
+                
+                return `
+                    <div class="provider-card border rounded-lg p-4 mb-4 bg-white">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="cursor-pointer flex-grow" onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'>
+                                <h3 class="font-medium text-lg">
+                                    ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                                </h3>
+                                <p class="text-gray-600">
+                                    ${provider.specialty || 'Specialty not listed'}<br />
+                                    ${provider.city}, ${provider.state} ${provider.zip}
+                                </p>
+                                <p class="text-gray-500 text-sm">NPI: ${provider.npi}</p>
+                            </div>
+                            
+                            <div class="flex flex-col space-y-2 ml-4">
+                                <button 
+                                    onclick="copyToClipboard(${JSON.stringify(aiQuery)}, this)"
+                                    class="ai-button bg-blue-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-600 
+                                           transition-all flex items-center justify-center"
+                                >
+                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                              d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 0h8a2 2 0 012 2v2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                                    </svg>
+                                    Copy AI Query
+                                </button>
+                                
+                                <div class="ai-links flex flex-col space-y-1">
+                                    <a href="${aiLinks.perplexity}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
+                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                        </svg>
+                                        Perplexity
+                                    </a>
+                                    <a href="${aiLinks.copilot}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
+                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                        </svg>
+                                        Copilot
+                                    </a>
+                                    <a href="${aiLinks.chatgpt}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
+                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                                        </svg>
+                                        ChatGPT
+                                    </a>
+                                    <a href="${aiLinks.gemini}" target="_blank" 
+                                       class="text-blue-600 hover:text-blue-800 text-sm flex items-center">
+                                        <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                        </svg>
+                                        Gemini
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-between items-center pt-2 border-t">
+                            <button 
+                                onclick='fetchProcedures(${JSON.stringify(provider).replace(/"/g, '&quot;')})'
+                                class="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                            >
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                          d="M9 5l7 7-7 7"/>
+                                </svg>
+                                View Medicare Procedures
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function fetchProcedures(provider) {
+            showLoading(true);
+            elements.providersContainer.classList.add('hidden');
+            elements.providerDetails.classList.remove('hidden');
+            
+            elements.csvProgress.classList.remove('hidden');
+            elements.csvProgressContainer.classList.remove('hidden');
+            elements.progressIndicator.classList.remove('hidden');
+            
+            try {
+                const paddedChunk = provider.chunk.toString().padStart(3, '0');
+                const csvFile = `part_${paddedChunk}.csv`;
+                
+                elements.csvProgress.textContent = `Loading procedures from ${csvFile}`;
+                elements.csvProgressBar.style.width = '50%';
+                
+                const response = await fetch(`${GITHUB_BASE_URL_FILES}${csvFile}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch procedures data');
+                }
+
+                const text = await response.text();
+                elements.csvProgressBar.style.width = '75%';
+                elements.csvProgress.textContent = `Processing procedures from ${csvFile}`;
+                
+                Papa.parse(text, {
+                    header: true,
+                    complete: (results) => {
+                        const providerProcedures = results.data.filter(
+                            row => row.Rndrng_NPI === provider.npi
+                        );
+
+                        const groupedProcedures = _.chain(providerProcedures)
+                            .groupBy('HCPCS_Cd')
+                            .map((group, code) => ({
+                                code,
+                                description: group[0].HCPCS_Desc,
+                                services: _.sumBy(group, row => parseInt(row.Tot_Srvcs) || 0),
+                                avgPayment: _.meanBy(group, row => parseFloat(row.Avg_Mdcr_Pymt_Amt) || 0)
+                            }))
+                            .orderBy(['avgPayment'], ['desc'])
+                            .value();
+
+                        elements.csvProgressBar.style.width = '100%';
+                        elements.csvProgress.textContent = 'Complete!';
+                        
+                        setTimeout(() => {
+                            elements.progressIndicator.classList.add('hidden');
+                            elements.csvProgress.classList.add('hidden');
+                            elements.csvProgressContainer.classList.add('hidden');
+                        }, 1000);
+
+                        displayProviderDetails(provider);
+                        displayProcedures(groupedProcedures);
+                        showLoading(false);
+                    },
+                    error: (error) => {
+                        console.error('CSV parsing error:', error);
+                        showError('Error processing provider data');
+                        showLoading(false);
+                    }
+                });
+            } catch (error) {
+                console.error('Procedure fetch error:', error);
+                showError('Error fetching provider procedures');
+                showLoading(false);
+            }
+        }
+
+        function displayProviderDetails(provider) {
+            elements.selectedProviderInfo.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-xl font-semibold mb-2">
+                            ${provider.lastname}, ${provider.firstname} ${provider.mi || ''}
+                        </h2>
+                        <p class="text-gray-600">
+                            ${provider.specialty || 'Specialty not listed'}<br />
+                            ${provider.city}, ${provider.state} ${provider.zip}
+                        </p>
+                        <p class="text-gray-500 text-sm mt-1">NPI: ${provider.npi}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayProcedures(procedures) {
+            elements.proceduresList.innerHTML = procedures.length ? `
+                <h3 class="text-lg font-semibold mb-4">Medicare Procedures</h3>
+                ${procedures.map(procedure => `
+                    <div class="border rounded-lg p-4 bg-white">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-grow">
+                                <h4 class="font-medium text-blue-600">${procedure.code}</h4>
+                                <p class="text-gray-600 mt-1">${procedure.description}</p>
+                                <p class="text-sm text-gray-500 mt-2">
+                                    ${procedure.services.toLocaleString()} services performed
+                                </p>
+                            </div>
+                            <div class="text-right ml-4">
+                                <p class="text-lg font-bold text-green-600">
+                                    $${procedure.avgPayment.toFixed(2)}
+                                </p>
+                                <p class="text-sm text-gray-500">average Medicare payment</p>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            ` : '<div class="text-center py-8 text-gray-500">No Medicare procedures found for this provider</div>';
+        }
+
+        // Initialize checkbox handlers
+        function initializeCheckboxLogic() {
+            // Location checkboxes
+            document.querySelectorAll('input[name="location"]').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const isAllUS = this.value === '';
+                    const isPittsburgh = this.value === 'pittsburgh';
+
+                    if (isAllUS && this.checked) {
+                        document.querySelectorAll('input[name="location"]').forEach(cb => {
+                            if (cb !== this) cb.checked = false;
+                        });
+                    } else if (isPittsburgh && this.checked) {
+                        PITTSBURGH_ALL_ZIPS.forEach(zip => {
+                            const cb = document.querySelector(`input[value="${zip}"]`);
+                            if (cb) cb.checked = true;
+                        });
+                        elements.allUS.checked = false;
+                    } else if (!isAllUS && this.checked) {
+                        elements.allUS.checked = false;
+                    }
+
+                    updateSelectedFilters();
+                });
+            });
+
+            // Specialty checkboxes
+            document.querySelectorAll('input[name="specialty"]').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const isAllSpecialties = this.value === 'all';
+
+                    if (isAllSpecialties && this.checked) {
+                        document.querySelectorAll('input[name="specialty"]').forEach(cb => {
+                            if (cb !== this) cb.checked = false;
+                        });
+                    } else if (!isAllSpecialties && this.checked) {
+                        elements.allSpecialties.checked = false;
+                    }
+
+                    updateSelectedFilters();
+                });
+            });
+        }
+
+        // Event Listeners
+        elements.searchButton.addEventListener('click', searchProviders);
+        elements.backButton.addEventListener('click', () => {
+            elements.providerDetails.classList.add('hidden');
+            elements.providersContainer.classList.remove('hidden');
+        });
+        elements.lastName.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchProviders();
+        });
+
+        // Initialize
+        initializeSpecialtyCheckboxes();
+        initializeCheckboxLogic();
+        updateSelectedFilters();
+    </script>
+</body>
+</html>
